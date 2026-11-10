@@ -437,3 +437,5 @@ src/generated/
 !.env.example
 *.tsbuildinfo
 .DS_Store
+test-results/
+playwright-report/

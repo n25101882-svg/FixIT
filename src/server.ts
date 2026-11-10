@@ -11,7 +11,10 @@ async function main() {
   try {
     await database.$connect();
     await checkDatabase(database);
-    const app = createApp(() => checkDatabase(database));
+    const app = createApp(() => checkDatabase(database), {
+      database,
+      ...config,
+    });
     await new Promise<void>((resolve, reject) => {
       server = app.listen(config.port, config.host, (error?: Error) => {
         if (error) reject(error);
@@ -19,10 +22,14 @@ async function main() {
       });
       server.once("error", reject);
     });
-    console.log(`FixIT backend listening on ${config.host}:${config.port}; database connected.`);
+    console.log(
+      `FixIT backend listening on ${config.host}:${config.port}; database connected.`,
+    );
   } catch {
     await database.$disconnect();
-    throw new Error("Backend startup failed. Check DATABASE_URL, PostgreSQL availability and the listen address/port. Credentials are hidden.");
+    throw new Error(
+      "Backend startup failed. Check DATABASE_URL, PostgreSQL availability and the listen address/port. Credentials are hidden.",
+    );
   }
 
   let stopping = false;
@@ -40,12 +47,18 @@ async function main() {
       }
     });
   }
-  process.once("SIGINT", () => { void stop(); });
-  process.once("SIGTERM", () => { void stop(); });
+  process.once("SIGINT", () => {
+    void stop();
+  });
+  process.once("SIGTERM", () => {
+    void stop();
+  });
 }
 
 main().catch((error: unknown) => {
   // Only our deliberately redacted configuration/startup errors are exposed.
-  console.error(error instanceof Error ? error.message : "Backend startup failed.");
+  console.error(
+    error instanceof Error ? error.message : "Backend startup failed.",
+  );
   process.exitCode = 1;
 });
