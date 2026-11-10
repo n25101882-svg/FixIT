@@ -426,3 +426,14 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# FixIT: Node/TypeScript and local configuration
+node_modules/
+dist/
+coverage/
+src/generated/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+.DS_Store

@@ -1,0 +1,89 @@
+Project FixIT {
+  database_type: 'PostgreSQL'
+  Note: 'Physical MVP schema. Money: integer UAH kopecks. Role guards are SQL triggers in the initial migration; DBML cannot express their bodies.'
+}
+
+Enum user_role {
+  ADMIN
+  CLIENT
+  MASTER
+}
+
+Enum order_status {
+  PENDING
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+Table users {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  email varchar(254) [not null, note: 'Canonical lowercase, trimmed; CHECK in migration']
+  password_hash varchar(255) [not null, note: 'Password hash only; never plaintext']
+  name varchar(100) [not null]
+  role user_role [not null]
+  created_at timestamptz(3) [not null, default: `now()`]
+
+  indexes {
+    email [unique, name: 'users_email_key']
+  }
+  checks {
+    `email = lower(btrim(email))` [name: 'users_email_canonical_check']
+  }
+}
+
+Table master_profiles {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null, note: 'SQL trigger requires users.role = MASTER']
+  city varchar(100) [not null]
+  bio text [null]
+  is_approved boolean [not null, default: false]
+
+  indexes {
+    user_id [unique, name: 'master_profiles_user_id_key']
+  }
+}
+
+Table services {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  master_profile_id uuid [not null]
+  title varchar(160) [not null]
+  category varchar(80) [not null, note: 'Category code; no separate category table in this MVP']
+  description text [not null]
+  price_cents integer [not null, note: 'UAH kopecks, >= 0']
+  is_active boolean [not null, default: true]
+
+  indexes {
+    master_profile_id [name: 'services_master_profile_id_idx']
+    (category, is_active) [name: 'services_category_is_active_idx']
+  }
+  checks {
+    `price_cents >= 0` [name: 'services_price_cents_check']
+  }
+}
+
+Table orders {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  client_id uuid [not null, note: 'SQL trigger requires users.role = CLIENT']
+  service_id uuid [not null]
+  description text [not null]
+  price_at_order_cents integer [not null, note: 'Price snapshot in UAH kopecks; independent of later service price']
+  status order_status [not null, default: 'PENDING']
+  created_at timestamptz(3) [not null, default: `now()`]
+
+  indexes {
+    (client_id, created_at) [name: 'orders_client_id_created_at_idx']
+    service_id [name: 'orders_service_id_idx']
+    (status, created_at) [name: 'orders_status_created_at_idx']
+  }
+  checks {
+    `price_at_order_cents >= 0` [name: 'orders_price_at_order_cents_check']
+  }
+  Note: 'Associative entity: the same client may order the same service repeatedly; no UNIQUE(client_id, service_id). No duplicate master_id: derive it through service.'
+}
+
+Ref master_profiles_user_id_fkey: users.id - master_profiles.user_id [delete: restrict, update: cascade]
+Ref services_master_profile_id_fkey: services.master_profile_id > master_profiles.id [delete: restrict, update: cascade]
+Ref orders_client_id_fkey: orders.client_id > users.id [delete: restrict, update: cascade]
+Ref orders_service_id_fkey: orders.service_id > services.id [delete: restrict, update: cascade]
