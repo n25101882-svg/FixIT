@@ -2,6 +2,7 @@ import express, { type ErrorRequestHandler } from "express";
 import cors from "cors";
 import { authRouter, type AuthOptions } from "./auth/router.js";
 import { HttpError } from "./http-error.js";
+import { ordersRouter } from "./orders/router.js";
 
 export function createApp(
   checkDatabase: () => Promise<void>,
@@ -32,12 +33,13 @@ export function createApp(
             );
         },
         credentials: false,
-        methods: ["GET", "POST", "OPTIONS"],
+        methods: ["GET", "POST", "DELETE", "OPTIONS"],
         allowedHeaders: ["Authorization", "Content-Type"],
         maxAge: 600,
       }),
       express.json({ limit: "16kb" }),
       authRouter(auth),
+      ordersRouter(auth),
     );
   }
 

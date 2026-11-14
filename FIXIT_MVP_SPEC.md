@@ -1,6 +1,6 @@
 # FixIT — Hybrid MVP 1.0
 
-Практичні №6–7 розвивають наявну PostgreSQL 18 / Prisma 7.10.1 базу з п’ятьма сутностями. Це основа MVP, а не реалізація всього backlog. Initial `20261109200000_init_database_schema` і вже застосована Hybrid `20261114130000_hybrid_mvp` незмінні. Review-виправлення — наступна `20261114150000_review_snapshot_alignment`, без reset/db push. PR #3 вже merged у develop (`f7d7684`); Auth/React у PR #2 інтегровані з цією моделлю без нових змін схеми.
+Практичні №6, №7, №9 розвивають наявну PostgreSQL 18 / Prisma 7.10.1 базу з п’ятьма сутностями. Це основа MVP, а не реалізація всього backlog. Initial `20261109200000_init_database_schema` і вже застосована Hybrid `20261114130000_hybrid_mvp` незмінні. Review-виправлення — наступна `20261114150000_review_snapshot_alignment`, без reset/db push. PR #3 вже merged у develop (`f7d7684`); Auth/React у PR #2 інтегровані з цією моделлю без нових змін схеми.
 
 ## Межі й ролі
 
@@ -8,9 +8,9 @@
 
 - CLIENT створює STANDARD/CUSTOM, обирає одного виконавця для власного OPEN CUSTOM і скасовує свою заявку до початку роботи.
 - MASTER має власний профіль/послуги, подає одну пропозицію на OPEN CUSTOM; призначений майстер приймає/відхиляє STANDARD, починає та завершує роботу.
-- Auth/JWT/React та атомарна MASTER-реєстрація реалізовані в [PR #2](https://github.com/n25101882-svg/FixIT/pull/2). Backend має POST /api/v1/auth/register, POST /api/v1/auth/login, захищений GET /api/v1/users/me та /health і /health/ready. HTTP-маршрути запису замовлень не відкриті.
+- Auth/JWT/React та атомарна MASTER-реєстрація реалізовані в [PR #2](https://github.com/n25101882-svg/FixIT/pull/2). Backend має POST /api/v1/auth/register, POST /api/v1/auth/login, захищений GET /api/v1/users/me та /health і /health/ready. Практична №9 відкриває захищені CLIENT GET/POST /api/v1/orders і DELETE /api/v1/orders/:id поверх існуючого сервісу.
 
-`src/orders/service.ts` — внутрішні транзакційні команди. actorId для майбутніх order routes надходитиме лише з перевіреного JWT/current User, не з body; роль/належність повторно читаються з БД. Каталог, стрічка з фільтрами за містом/категорією та їхні екрани/API належать наступним задачам. Поточні екрани — /register, /login, захищений /dashboard. Reviews, платежі, OAuth, Agreements і чат не додаються.
+`src/orders/service.ts` — внутрішні транзакційні команди. actorId у POST/DELETE order routes надходить лише з перевіреного JWT/current User, не з body; роль/належність повторно читаються з БД. Каталог, стрічка з фільтрами за містом/категорією та їхні екрани/API належать наступним задачам. Поточні екрани — /register, /login, захищені /dashboard і /orders. Із CLIENT-кабінету є перехід до власних заявок. Reviews, платежі, OAuth, Agreements і чат не додаються.
 
 ## Фізична модель
 
@@ -94,4 +94,18 @@ Login повертає короткоживучий HS256 JWT (issuer fixit-api,
 
 React показує MASTER-поля тільки після вибору ролі MASTER, не посилає їх для CLIENT, необов’язкову ціну передає рядком. Є підтвердження пароля, серверні field errors, /login, /dashboard із реальним users/me, protected routing і logout. Token лише в пам’яті, refresh вимагає повторного входу; localStorage/sessionStorage не використовуються.
 
-Критерії приймання FIX-1: MASTER success створює рівно три пов’язані записи; реальна DB-помилка третьої Service → rollback усіх трьох, без 201/token; duplicate/race email → один account без orphan; invalid MASTER fields → 400 до запису; CLIENT без профілю; ADMIN відхилений; login/me/JWT/CORS/rate-limit і frontend flow збережені. Фактичні результати endpoint, Hybrid і browser тестів — у [звіті №7](docs/PRACTICAL_7.md). Усі 82 Hybrid-тести та три SQL-міграції з develop збережені; Auth/frontend та test:migrations scripts поєднані. Merge PR #2 виконується тільки після окремого review/QA.
+Критерії приймання FIX-1: MASTER success створює рівно три пов’язані записи; реальна DB-помилка третьої Service → rollback усіх трьох, без 201/token; duplicate/race email → один account без orphan; invalid MASTER fields → 400 до запису; CLIENT без профілю; ADMIN відхилений; login/me/JWT/CORS/rate-limit і frontend flow збережені. Фактичні результати endpoint, Hybrid і browser тестів — у [звіті №7](docs/PRACTICAL_7.md). Усі 82 Hybrid-тести та три SQL-міграції з develop збережені; Auth/frontend та test:migrations scripts поєднані. PR #2 вже merged у develop (e046255); наступні зміни також потребують окремого review/QA без автоматичного merge.
+
+## Практична №9: вертикальний CUSTOM-сценарій
+
+GET /api/v1/orders повертає `{orders:[...]}` тільки поточного CLIENT з БД, найновіші createdAt DESC, id DESC для однакових дат. Включає STANDARD/CUSTOM й кінцеві стани, щоб скасовані заявки залишались в історії. Query-фільтри/пагінація не реалізовані, сторонні query-поля → 400; clientId береться лише з JWT subject.
+
+POST /api/v1/orders приймає тільки title (trim 1–160), description (trim 1–4000), city (trim 1–100), category з service_category та optional budget (exact decimal string 0..99999999.99, до двох дробових цифр). CLIENT/role читається з БД, unknown/ownership/status/legacy поля заборонені strict Zod. Контролер викликає існуючий createCustom; той створює CUSTOM OPEN із NULL service/master/priceAtOrder та DB history. Після commit → 201 `{order:...}`. Відсутній budget → NULL, не 0.
+
+DELETE /api/v1/orders/:id перевіряє UUID та викликає існуючий transition з CANCELLED, не фізичне видалення. Лише CLIENT-власник; стани OPEN/PENDING/ACCEPTED дозволені за тим самим сервісом, повторне скасування/після початку робіт → 409. 200 повертає оновлений Order, історія й snapshot збережені. Identity/state/ownership правила не копіюються в HTTP-контролер; CLIENT middleware — дозвіл доступу до endpoint, сервіс знову перевіряє авторитетні дані у транзакції.
+
+Missing/invalid/expired JWT або видалений User → 401; MASTER/ADMIN/чужий власник → 403; invalid payload/UUID/query → 400; відсутній UUID → 404; недопустимий стан → 409. Повідомлення не містять SQL/stack/секретів. Money у DTO — fixed-two-decimal strings або NULL, dates — ISO, statusHistory — DB JSON. У CORS додано DELETE зі збереженням exact origins.
+
+React /orders: Loading/Empty/Error/Success, форма CUSTOM, список власних замовлень, читабельні статуси, бюджет та скасування до початку робіт. POST/DELETE відповіді оновлюють локальний список без reload, скасована картка залишається; «Оновити» повторює GET. На 401 сесія очищується, на 403 форма не показується. Зміни з інших сесій потребують ручного GET/оновлення; autosave/real-time/pagination/full history timeline не додаються.
+
+Три SQL-міграції та Hybrid schema не змінені; нової таблиці Orders немає. Попередні 145 backend, 12 frontend і 5 Auth E2E збережені. Фактичні результати, Windows QA й інструкції справжніх /orders, Network 200/201 і PostgreSQL доказів — у [звіті №9](docs/PRACTICAL_9.md).
