@@ -42,7 +42,7 @@ enum Category {
   ELECTRICAL
   OTHER
 
-  @@map("category")
+  @@map("service_category")
 }
 
 model User {
@@ -78,8 +78,8 @@ model Service {
   masterProfileId String        @map("master_profile_id") @db.Uuid
   title           String        @db.VarChar(160)
   category        Category
-  description     String        @db.Text
-  price           Decimal       @db.Decimal(10, 2)
+  description     String?       @db.Text
+  priceEstimate   Decimal?      @map("price_estimate") @db.Decimal(10, 2)
   isActive        Boolean       @default(true) @map("is_active")
   masterProfile   MasterProfile @relation(fields: [masterProfileId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   orders          Order[]
@@ -101,6 +101,7 @@ model Order {
   category        Category
   description     String          @db.Text
   priceAtOrder    Decimal?        @map("price_at_order") @db.Decimal(10, 2)
+  budget          Decimal?        @db.Decimal(10, 2)
   status          OrderStatus     @default(PENDING)
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime        @default(now()) @map("updated_at") @db.Timestamptz(3)
@@ -122,7 +123,7 @@ model OrderResponse {
   id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   orderId         String        @map("order_id") @db.Uuid
   masterProfileId String        @map("master_profile_id") @db.Uuid
-  proposedPrice   Decimal       @map("proposed_price") @db.Decimal(10, 2)
+  proposedPrice   Decimal?      @map("proposed_price") @db.Decimal(10, 2)
   message         String        @db.Text
   createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   order           Order         @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)

@@ -85,7 +85,7 @@ describe("real PostgreSQL migrations, seeding and relations", () => {
       expect(order.client.role).toBe("CLIENT");
       expect(order.service.masterProfile.user.role).toBe("MASTER");
       expect(order.priceAtOrder.toFixed(2)).toBe(
-        order.service.price.toFixed(2),
+        order.service.priceEstimate.toFixed(2),
       );
     }
   });
@@ -136,7 +136,7 @@ describe("real PostgreSQL migrations, seeding and relations", () => {
     await rollback(async (tx) => {
       await tx.service.update({
         where: { id: seedIds.serviceA },
-        data: { price: "990.00" },
+        data: { priceEstimate: "990.00" },
       });
       expect(
         (
@@ -243,7 +243,7 @@ describe("real PostgreSQL migrations, seeding and relations", () => {
             title: "Orphan",
             category: "OTHER",
             description: "Synthetic",
-            price: "0.00",
+            priceEstimate: "0.00",
           },
         }),
       ),
@@ -271,7 +271,7 @@ describe("real PostgreSQL migrations, seeding and relations", () => {
       rollback((tx) =>
         tx.service.update({
           where: { id: seedIds.serviceA },
-          data: { price: "-0.01" },
+          data: { priceEstimate: "-0.01" },
         }),
       ),
     ).rejects.toThrow();

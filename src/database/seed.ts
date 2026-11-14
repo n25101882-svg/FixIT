@@ -127,7 +127,7 @@ export async function seedDatabase(database: PrismaClient) {
           title: "Заміна змішувача",
           category: "PLUMBING" as const,
           description: "Синтетична послуга для перевірки замовлень.",
-          price: "250.00",
+          priceEstimate: "250.00",
           isActive: true,
         },
         {
@@ -136,7 +136,7 @@ export async function seedDatabase(database: PrismaClient) {
           title: "Діагностика протікання",
           category: "PLUMBING" as const,
           description: "Синтетична неактивна послуга.",
-          price: "150.00",
+          priceEstimate: "150.00",
           isActive: false,
         },
         {
@@ -145,7 +145,7 @@ export async function seedDatabase(database: PrismaClient) {
           title: "Монтаж сифона",
           category: "PLUMBING" as const,
           description: "Синтетична додаткова послуга.",
-          price: "400.00",
+          priceEstimate: "400.00",
           isActive: true,
         },
       ];

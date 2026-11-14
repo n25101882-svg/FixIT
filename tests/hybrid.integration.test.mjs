@@ -51,12 +51,13 @@ const rejects = (action, code) =>
   expect(Promise.resolve().then(action)).rejects.toMatchObject({ code });
 
 describe("Hybrid persistence invariants", () => {
-  test("both ordered migrations are applied", async () => {
+  test("all three ordered migrations are applied", async () => {
     const rows =
       await database.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name`;
     expect(rows.map((r) => r.migration_name)).toEqual([
       "20261109200000_init_database_schema",
       "20261114130000_hybrid_mvp",
+      "20261114150000_review_snapshot_alignment",
     ]);
   });
   test("seed has STANDARD and unassigned OPEN CUSTOM with unique proposals", async () => {
@@ -149,7 +150,7 @@ describe("Hybrid persistence invariants", () => {
     async (price) => {
       await expect(
         rollback((tx) =>
-          tx.service.update({ where: { id: ids.serviceA }, data: { price } }),
+          tx.service.update({ where: { id: ids.serviceA }, data: { priceEstimate: price } }),
         ),
       ).rejects.toThrow();
       await expect(
@@ -193,21 +194,21 @@ describe("Hybrid persistence invariants", () => {
     await rollback(async (tx) => {
       await tx.service.update({
         where: { id: ids.serviceA },
-        data: { price: "99999999.99" },
+        data: { priceEstimate: "99999999.99" },
       });
       expect(
         (
           await tx.service.findUniqueOrThrow({ where: { id: ids.serviceA } })
-        ).price.toFixed(2),
+        ).priceEstimate.toFixed(2),
       ).toBe("99999999.99");
       await tx.service.update({
         where: { id: ids.serviceA },
-        data: { price: "0.00" },
+        data: { priceEstimate: "0.00" },
       });
       expect(
         (
           await tx.service.findUniqueOrThrow({ where: { id: ids.serviceA } })
-        ).price.toFixed(2),
+        ).priceEstimate.toFixed(2),
       ).toBe("0.00");
     });
   });
@@ -246,7 +247,7 @@ describe("server commands (trusted actor boundary, no Auth imported)", () => {
       expect(order.statusHistory[0].actorUserId).toBe(ids.clientA);
       await tx.service.update({
         where: { id: ids.serviceA },
-        data: { price: "999.00" },
+        data: { priceEstimate: "999.00" },
       });
       expect(
         (

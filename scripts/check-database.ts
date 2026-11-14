@@ -24,13 +24,13 @@ async function main() {
     const migrations = await database.$queryRaw<{ migration_name: string }[]>`
       SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name
     `;
-    assert.ok(
-      migrations.some(
-        (row) => row.migration_name === "20261114130000_hybrid_mvp",
-      ),
-    );
+    for (const name of [
+      "20261109200000_init_database_schema",
+      "20261114130000_hybrid_mvp",
+      "20261114150000_review_snapshot_alignment",
+    ]) assert.ok(migrations.some((row) => row.migration_name === name), `Missing migration: ${name}`);
     console.log(
-      "Hybrid schema OK: five business tables and applied Hybrid migration.",
+      "Hybrid schema OK: five business tables and all three applied migrations.",
     );
   } finally {
     await database.$disconnect();

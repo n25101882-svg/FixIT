@@ -89,7 +89,7 @@ export function createOrderService(database: PrismaClient) {
             city: service.masterProfile.city,
             category: service.category,
             description,
-            priceAtOrder: service.price,
+            priceAtOrder: service.priceEstimate,
           },
         });
       });
@@ -101,11 +101,13 @@ export function createOrderService(database: PrismaClient) {
         city: string;
         category: Category;
         description: string;
+        budget?: string | null;
       },
     ) {
       const title = text(input.title, "title", 160);
       const city = text(input.city, "city", 100);
       const description = text(input.description, "description");
+      const budget = input.budget == null ? null : money(input.budget);
       if (!Object.values(Category).includes(input.category))
         throw new OrderError("INVALID_INPUT", "Invalid category");
       return database.$transaction(async (tx) => {
@@ -119,15 +121,16 @@ export function createOrderService(database: PrismaClient) {
             city,
             category: input.category,
             description,
+            budget,
           },
         });
       });
     },
     respond(
       actorId: string,
-      input: { orderId: string; proposedPrice: string; message: string },
+      input: { orderId: string; proposedPrice?: string | null; message: string },
     ) {
-      const proposedPrice = money(input.proposedPrice);
+      const proposedPrice = input.proposedPrice == null ? null : money(input.proposedPrice);
       const message = text(input.message, "message");
       return database.$transaction(async (tx) => {
         const master = await actor(tx, actorId, "MASTER");
@@ -215,8 +218,8 @@ export function createOrderService(database: PrismaClient) {
         const allowed: Partial<Record<OrderStatus, OrderStatus[]>> = executor
           ? {
               PENDING: ["ACCEPTED", "DECLINED"],
-              ACCEPTED: ["IN_PROGRESS", "CANCELLED"],
-              IN_PROGRESS: ["COMPLETED", "CANCELLED"],
+              ACCEPTED: ["IN_PROGRESS"],
+              IN_PROGRESS: ["COMPLETED"],
             }
           : {
               OPEN: ["CANCELLED"],

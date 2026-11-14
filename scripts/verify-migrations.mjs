@@ -43,6 +43,8 @@ const upgrade = new pg.Client({
 });
 const directory = mkdtempSync(join(tmpdir(), "fixit-hybrid-migrations-"));
 const initialName = "20261109200000_init_database_schema";
+const hybridName = "20261114130000_hybrid_mvp";
+const reviewName = "20261114150000_review_snapshot_alignment";
 const initialPath = join(
   root,
   "prisma/migrations",
@@ -121,7 +123,7 @@ try {
   await upgrade.connect();
   await empty(clean);
   await empty(upgrade);
-  deploy(cleanUrl, "fresh database applies both migrations");
+  deploy(cleanUrl, "fresh database applies all three migrations");
   const tables = (
     await clean.query(
       "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename <> '_prisma_migrations' ORDER BY tablename",
@@ -246,7 +248,16 @@ try {
     "PASS unsupported category refuses migration atomically; no rows/prices dropped",
   );
   const observedAfter = Date.now() - 1000;
-  deploy(upgradeUrl, "upgrade legacy orders with the new sequential migration");
+  const hybridDir = join(directory, "migrations", hybridName);
+  mkdirSync(hybridDir);
+  copyFileSync(join(root, "prisma/migrations", hybridName, "migration.sql"), join(hybridDir, "migration.sql"));
+  deploy(upgradeUrl, "upgrade legacy orders with the unchanged Hybrid migration", config);
+  // Model a database that already ran Hybrid: the review migration must only
+  // install guards/optional fields, never rewrite historical snapshots/events.
+  const beforeReview = (await upgrade.query("SELECT to_jsonb(o) AS value FROM orders o ORDER BY id")).rows;
+  deploy(upgradeUrl, "apply review follow-up to the existing Hybrid database");
+  const afterReview = (await upgrade.query("SELECT to_jsonb(o) - 'budget' AS value FROM orders o ORDER BY id")).rows;
+  assert.deepEqual(afterReview, beforeReview, "Review migration rewrote existing order data/history");
   const after = (await upgrade.query("SELECT * FROM orders ORDER BY id")).rows;
   assert.equal(after.length, before.length);
   for (let i = 0; i < before.length; i++) {
@@ -267,6 +278,7 @@ try {
     assert.equal(a.title, "Legacy title");
     assert.equal(a.city, "Legacy Test City");
     assert.equal(a.category, "PLUMBING");
+    assert.equal(a.budget, null);
     assert.equal(a.status_history.length, 1);
     assert.equal(a.status_history[0].source, "legacy_migration");
     assert.equal(a.status_history[0].status, b.status);
@@ -274,10 +286,10 @@ try {
     assert.equal(Date.parse(a.status_history[0].legacyCreatedAt), b.created_at.getTime());
   }
   const services = (
-    await upgrade.query("SELECT id,price FROM services ORDER BY id")
+    await upgrade.query("SELECT id,price_estimate FROM services ORDER BY id")
   ).rows;
-  assert.equal(services.find((s) => s.id === serviceId).price, "21474836.47");
-  assert.equal(services.find((s) => s.id === tinyServiceId).price, "0.01");
+  assert.equal(services.find((s) => s.id === serviceId).price_estimate, "21474836.47");
+  assert.equal(services.find((s) => s.id === tinyServiceId).price_estimate, "0.01");
   const profiles = (
     await upgrade.query("SELECT id,description,category FROM master_profiles")
   ).rows;
@@ -287,13 +299,24 @@ try {
   );
   assert.equal(profiles.find((p) => p.id === otherProfileId).description, null);
   assert.equal(profiles.find((p) => p.id === otherProfileId).category, "OTHER");
-  const migration = (
-    await upgrade.query(
-      "SELECT checksum FROM _prisma_migrations WHERE migration_name=$1 AND finished_at IS NOT NULL",
-      [initialName],
-    )
-  ).rows;
-  assert.equal(migration[0].checksum, initialHash);
+  for (const name of [initialName, hybridName, reviewName]) {
+    const migration = (await upgrade.query("SELECT checksum FROM _prisma_migrations WHERE migration_name=$1 AND finished_at IS NOT NULL AND rolled_back_at IS NULL", [name])).rows;
+    assert.equal(migration.length, 1);
+    const hash = name === initialName ? initialHash : createHash("sha256").update(readFileSync(join(root, "prisma/migrations", name, "migration.sql"))).digest("hex");
+    assert.equal(migration[0].checksum, hash);
+  }
+  const immutable = await snapshot(upgrade);
+  for (const [field, value] of [["title", "Changed"], ["city", "Changed"], ["category", "OTHER"], ["description", "Changed"], ["budget", "1.00"]]) {
+    await upgrade.query("BEGIN");
+    try {
+      await upgrade.query("UPDATE services SET title='Must roll back' WHERE id=$1", [serviceId]);
+      await assert.rejects(upgrade.query(`UPDATE orders SET ${field}=$1 WHERE id=$2`, [value, before[0].id]), (error) => error.code === "23514" && error.message === "Order content snapshots are immutable");
+    } finally {
+      await upgrade.query("ROLLBACK");
+    }
+    assert.equal(await snapshot(upgrade), immutable, `Rejected ${field} edit or earlier writes changed legacy data`);
+  }
+  console.log("PASS review migration preserves existing Hybrid rows/history; each legacy snapshot field is protected and earlier writes roll back");
   const state = await snapshot(upgrade);
   assert.match(
     deploy(upgradeUrl, "legacy upgrade repeat deploy"),
@@ -304,7 +327,7 @@ try {
     "PASS 5 old orders/all old statuses, IDs, timestamps, descriptions and exact prices (0/1/max int cents) preserved",
   );
   console.log(
-    "PASS initial migration checksum unchanged; legacy nullable biography preserved",
+    "PASS all three migration checksums match files; legacy nullable biography preserved",
   );
   console.log(
     "Migration verification complete. Dedicated databases retained for inspection; no reset/drop performed.",
