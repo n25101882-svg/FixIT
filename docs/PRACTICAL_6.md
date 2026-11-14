@@ -1,93 +1,75 @@
-# Практична №6 — ER, PostgreSQL, Prisma migrations, Seeder
+# Практична №6 — Hybrid MVP Database Migration
 
-Дата перевірки: **9 листопада 2026 року**, Codex Cloud, Linux. Windows-команди наведені в README для відтворення, але на Windows у цьому чаті не виконувалися. До практичної №7 робота не переходила. Авторизація й бізнес-API не реалізовувалися.
+Перевірено **14 листопада 2026 року** у Codex Cloud. Гілка `feature/practical-06-hybrid-db` вже існувала від develop (`a814a61`); робота виконана в ній. PR #2 (`feature/practical-07-auth-skeleton`) залишається окремим відкритим Auth/React PR. Цей результат не містить Auth/React і не merge-иться автоматично.
 
 ## Результат
 
-Фізична ER-схема — `docs/er-diagram.dbml`, модель — `prisma/schema.prisma`, initial migration — `prisma/migrations/20261109200000_init_database_schema/migration.sql`. Чотири бізнес-таблиці: users, master_profiles, services, orders. `_prisma_migrations` — службова таблиця Prisma, а не додаткова сутність MVP.
+П’ять узгоджених таблиць: users, master_profiles, services, orders, order_responses. DBML, Prisma schema й фактична PostgreSQL мають однакові колонки; `npm run er:validate` перевіряє 7 FK, зокрема складену належність service/master для STANDARD.
 
-Міграція згенерована з моделі командою:
+Initial migration `20261109200000_init_database_schema/migration.sql` **не змінена**. Її SHA-256:
 
-```bash
-node node_modules/prisma/build/index.js migrate diff \
-  --from-empty --to-schema prisma/schema.prisma --script \
-  --output prisma/migrations/20261109200000_init_database_schema/migration.sql
+```text
+2c67b65cc6a5293b7a38683555f8b9caf0964d8d82b3f5e68f4dd482b8cab3ff
 ```
 
-**До першого застосування** до SQL додані BEGIN/COMMIT, CHECK для цін/email та три функції/triggers для ролей. Після застосування файл міграції не редагувався. Для наступних змін слід створювати нову міграцію. DBML містить ті самі поля, enum, індекси, FK та CHECK; рольові triggers позначені примітками, їхні тіла зберігаються в SQL. Схема та поведінка міграції перевірені проти PostgreSQL 18.
+Додана `20261114130000_hybrid_mvp`: транзакційне оновлення enum, нові Order поля/OrderResponse, точний cents → decimal(10,2), заповнення старих STANDARD, CHECK та triggers. Невідомі старі категорії не губляться через автоматичне OTHER: міграція відмовляється й вимагає явного виправлення. NULL/текст старого bio зберігаються у nullable description. Нова category профілю виводиться з однієї категорії послуг або OTHER за відсутності відомого однозначного значення.
 
-## Реально виконані перевірки
+ID, client/service links, опис, створення, всі старі статуси й ціни Orders збережені. Title/city/category/master — поточні дані наявних зв’язків на час backfill, а не реконструйовані історичні дані. statusHistory містить одне спостереження legacy_migration на **час міграції**, разом з відомим legacyCreatedAt; повна стара історія не вигадується. createdAt не змінюється.
 
-Робочий каталог: `/workspace/FixIT`. Перед командами завантажені локальні хмарні змінні з `/workspace/.fixit-dev/env.sh` і шлях до source-built Prisma engine з `/workspace/.fixit-dev/prisma-engine/env.sh`. Реальних значень паролів/connection strings у звіті немає.
+## Фактично виконано
 
-| Команда / сценарій | Фактичний результат |
+Середовище: Node.js 24.22.1, npm 11.9.0, Prisma 7.10.1, PostgreSQL 18.6. Використані окремі дозволені loopback *_test БД та окрема shadow. `fixit_dev`, production, домашні PostgreSQL/WSL і production-секрети не використовувалися. Немає reset/db push, TLS/checksum bypass або компіляції Rust.
+
+| Команда / перевірка | Результат |
 | --- | --- |
-| `node --version`; `npm --version` | v24.22.1; 11.9.0 |
-| `postgres --version`; `psql --version` | PostgreSQL 18.6 |
-| `npm ci --no-audit --no-fund` | Чисте встановлення за package-lock успішне |
-| `npm run db:generate` | Згенеровано Prisma Client 7.10.1 у src/generated/prisma |
-| `npm run db:validate` | Prisma schema valid |
-| `npm run er:validate` | DBML parses; 4 таблиці; 4 правильні FK та ON DELETE/UPDATE політики |
-| `npm run typecheck` | Backend, Prisma config, seeder і TS-скрипти без помилок |
-| Перший `npm run db:migrate` | Застосовано 20261109200000_init_database_schema |
-| Повторний `npm run db:migrate` | No pending migrations to apply |
-| `npm run db:status` | Database schema is up to date; одна міграція |
-| `npm run db:seed`, двічі | Обидва запуски успішні; 5 users, 2 masterProfiles, 3 services, 2 orders |
-| `npm run db:check` | PostgreSQL connection OK; database fixit_test; version 18.6 |
-| `npm test` після npm ci | **2 suites, 25 tests passed, 0 skipped, 0 failed** |
-| `prisma migrate diff --from-migrations prisma/migrations --to-config-datasource --exit-code` | No difference detected; exit 0; міграції повторно програно через окрему shadow DB |
-| `npm start`, реальний HTTP-запит | GET /health/ready → 200, `{"status":"ok","database":"up"}` |
-| Запуск dist/server.js з реальним закритим loopback DB-портом | Ненульовий exit; HTTP-порт не відкрито; пароль у логи не потрапив |
-| Запит до _prisma_migrations | Один запис init_database_schema; finished_at заповнено; rolled_back_at NULL |
-| SHA-256 migration.sql проти checksum у _prisma_migrations | Збігаються; застосований SQL не змінено |
-| SQL COUNT після всіх тестів | users=5, master_profiles=2, services=3, orders=2 |
-| `git check-ignore` | .env/.env.local/generated/node_modules/dist ігноруються; .env.example доступний для Git |
-| Перевірка поточного локального пароля у файлах результату | Значення відсутнє в усіх 21 перевіреному файлі; сам пароль не виводився |
-| `git diff --check` | Без whitespace-помилок |
+| npm ci --no-audit --no-fund | Чисте встановлення за наявним lockfile успішне; нових Auth-залежностей немає |
+| npm run db:generate | Prisma Client 7.10.1 згенеровано |
+| npm run db:validate | Schema valid |
+| npm run typecheck | Backend, seed, config і TS helpers без помилок |
+| npm run er:validate | 5 таблиць, 7 FK; правильні напрямки та policies |
+| npm run db:migrate, двічі | Обидві послідовні міграції застосовані; повторно No pending migrations |
+| npm run db:seed, двічі | Успіх; fixtures 5 users / 2 profiles / 3 services / 3 orders / 2 responses, без переписування історії |
+| npm test | **3 suites, 49/49 passed, 0 skipped, 0 failed** |
+| npm run build | TypeScript build успішний |
+| npm run db:check | SQL connection до PostgreSQL 18.6, 5 таблиць та Hybrid migration підтверджені |
+| npm run test:migrations | Clean deploy/seed/rerun та upgrade старих fixtures успішні; подробиці нижче |
+| prisma migrate diff --from-migrations prisma/migrations --to-config-datasource --exit-code | No difference detected, exit 0 |
+| Реальний npm start + GET /health/ready | HTTP 200 з database=up на Hybrid test БД; процес після перевірки зупинено |
+| POST /api/v1/orders без Auth | 404: незахищені мутації не відкриті |
+| Prisma/DBML/PostgreSQL column comparison | Збігаються всі 5 таблиць; 3 money колонки мають precision=10/scale=2 |
+| Initial migration bytes/checksum | Збігаються з develop та історією міграцій |
 
-Jest використовує Node ESM VM modules; Node друкує ExperimentalWarning. Це попередження, не пропущений тест. Перевірка readiness 503 у Jest моделює відмову DB callback; окремо сценарій startup вище використовував справжнє невдале TCP-підключення до закритого локального порту.
+`test:migrations` використовує **дві окремі порожні** CLEAN_DATABASE_URL/UPGRADE_DATABASE_URL, відмінні від основної test БД. Воно не очищує існуючі БД, а зупиняється, якщо вони не порожні. Після запуску результати збережені для огляду; для нового прогону надайте нову пару порожніх *_test БД.
 
-Інтеграційні тести перевірили:
+Перевірка upgrade спочатку застосувала тільки незмінений initial, створила синтетичні старі дані й п’ять Orders зі старими PENDING/ACCEPTED/IN_PROGRESS/COMPLETED/CANCELLED. Після Hybrid перевірені всі ID, зв’язки, описи, timestamp і точні значення 0, 1, 25000, 40000 та 2147483647 копійок. Окремо доведено 1 → 0.01 і 2147483647 → 21474836.47 без float. Програно атомарну SQL-відмову на UNMAPPED_LEGACY, після rollback жодний запис/ціна не втрачений; категорію явно повернуто до початкової для реального migrate deploy. Повторний deploy не змінив даних, initial checksum незмінний.
 
-- історію застосованої міграції;
-- ідемпотентність seeder через порівняння повного стану таблиць, хешів, timestamp і цін/статусів замовлень;
-- зв'язки CLIENT → Order → Service → MasterProfile → MASTER;
-- UUID/timestamp/default PENDING; можливість повторного замовлення однієї послуги;
-- незмінність priceAtOrderCents після зміни ціни Service;
-- UNIQUE email, canonical lowercase, 1:1 профілю;
-- рольові triggers для INSERT і зміни ролі користувача;
-- FK, NOT NULL, enum, CHECK невід'ємної ціни, ON DELETE RESTRICT;
-- HTTP 200/503 та відсутність бізнес-/auth-маршрутів;
-- відмову тестової конфігурації від відсутніх, зовнішніх і не *_test URL, включно з параметрами підміни адреси.
+49 Jest/Supertest тестів охоплюють FK/UNIQUE/NOT NULL/enum/CHECK/ролі/ціни (negative, overflow, NaN, zero/max), STANDARD та CUSTOM shape, один offer/profile, неможливість offer на STANDARD/закриту заявку, незмінність snapshot/history, законні переходи й ownership. Конкурентна selection використовує дві справжні транзакції: одна commit, друга CONFLICT; один master і лише одна ACCEPTED-подія. Вибрану пропозицію не можна видалити. Цей concurrency-тест залишає одну власну синтетичну історію в ізольованій *_test БД; це не mock і не дані користувачів. Решта мутацій тестів використовують rollback. Кількості fixtures не слід плутати з глобальним числом записів після domain-тестів.
 
-Негативні сценарії виконують rollback; синтетичні fixtures залишаються для ручної перевірки. Зовнішні й production БД не використовувалися.
+## SQL-обмеження
 
-## Особливість Prisma engine у цій машині
+- PK UUID у п’яти таблицях; обов’язкові поля NOT NULL, чотири enum: user_role (legacy ADMIN), order_type, order_status, category.
+- UNIQUE users.email, master_profiles.user_id, services(id,master_profile_id) та order_responses(order_id,master_profile_id).
+- 7 FK з RESTRICT видалення. Складений Orders(serviceId,masterProfileId) → Service(id,masterProfileId) виключає чужого майстра для STANDARD. Окремий master FK підтримує вибраний CUSTOM.
+- CHECK canonical email; ціни 0..99999999.99 (без NaN); непорожні city/title/description/message; правильна STANDARD/CUSTOM форма; JSON statusHistory — непорожній array.
+- Початкові role triggers збережені: master_profiles_require_master_role, orders_require_client_role, users_protect_linked_role.
+- orders_guard_hybrid: initial PENDING/OPEN, дозволені переходи, незмінність type/client/service/price та вибраного master, DB-maintained history/updatedAt.
+- order_responses_guard: parent FOR UPDATE, тільки OPEN unassigned CUSTOM, immutable offer, заборона видалення вибраної пропозиції.
 
-Мережевий доступ до binaries.prisma.sh був відхилений. Натомість для поточної машини **зібрано реальний офіційний schema engine** з prisma/prisma-engines на commit `d1b3f377ca835d73fd50954a5e22128b9ebdd6b8`, який вимагає встановлена @prisma/engines 7.10.1. `schema-engine --version` підтвердив той самий commit. Збирання: Rust 1.97.1, `cargo build --release --locked -p schema-engine-cli --bin schema-engine`, максимум 4 jobs. Cargo перевіряв залежності; TLS і перевірки checksum не вимикалися. Шлях переданий через підтримуваний PRISMA_SCHEMA_ENGINE_BINARY.
+Власність і право дії додатково перевіряє **серверний** src/orders/service.ts за actor з БД. SQL context actorUserId є аудитом, а не механізмом автентифікації. JSON-історія збережена всередині Order: шоста таблиця не додана. Немає дубльованого accepted-response flag.
 
-Це локальний інструмент середовища поза Git. Для іншої машини потрібен доступ до binaries.prisma.sh для офіційного download або власне перевірене збирання того самого commit; збереження цього артефакту в новому опублікованому snapshot у цьому етапі не перевірялося. Окремий Cloud Bootstrap PR не створювався: зміни репозиторію є реалізацією №6.
+## План інтеграції з PR #2
 
-## Як отримати справжні скріншоти
+1. Спочатку review цього PR і merge власником у develop; автоматичного merge немає. Потім оновити основу feature/practical-07-auth-skeleton від develop, не cherry-pick-ати стару initial migration чи старий generated client.
+2. User/id/email/passwordHash/name/role/createdAt та user_role не змінені, тому auth DTO, password verification та JWT subject з PR #2 залишаються сумісними. ADMIN не додавати у public register enum; MASTER registration як і раніше створює User, а не профіль із вигаданим city.
+3. Зберегти Hybrid schema/дві migrations і regenerated Prisma Client. Об’єднати npm scripts з workspaces/dependencies PR #2, залишити test:migrations. В env example зберегти обидва набори: локальні migration-test bindings і JWT/CORS налаштування. Private .env/секрети не переносити в Git.
+4. Погодити README/FIXIT_MVP_SPEC із двома етапами; не повертати cents або чотиритабличну схему через старі фрагменти документації.
+5. У майбутньому підключати order HTTP routes тільки після JWT middleware: actorId з перевіреного subject/current User, не з body. Мапити OrderError у 400/403/404/409. Не дублювати транзакційну логіку selection в контролері.
+6. Після інтеграції виконати migrate deploy на ізольованій test БД, Generate/Validate/typecheck/build, Hybrid+Auth тести, frontend build/tests та browser E2E PR #2. Ці Auth/React перевірки **не оголошуються виконаними в поточній гілці**.
 
-Скріншоти для здачі тут **не створювалися**. Нижче — відтворювані дії для реальних зображень, без вигаданих результатів.
+Статичний `git merge-tree` із фактичним head PR #2 (`b83f564`) показав текстові конфлікти лише у FIXIT_MVP_SPEC.md, README.md та package.json. Це обчислення merge-плану без checkout/merge гілок; Auth до цього head не додано. .env.example автоматично поєднується, але набір bindings потрібно перевірити вручну. Після розв’язання цих трьох файлів усе одно потрібні повні інтеграційні перевірки з пункту 6.
 
-1. **ER-діаграма.** Відкрийте dbdiagram.io у своєму браузері, створіть діаграму й вставте вміст `docs/er-diagram.dbml`. Перевірте чотири таблиці та зв'язки. Зробіть знімок вікна або експортуйте з реальної діаграми. Код DBML містить лише структуру та синтетичні пояснення, без паролів.
-2. **Міграція.** У терміналі свого checkout виконайте `npm run db:migrate`, потім `npm run db:status`. Якщо міграція вже застосована, реальний результат — No pending migrations / schema up to date; це не помилка. Не скидайте БД заради кадру. Додатково покажіть SQL історії нижче. Для кадру саме першого застосування можна підготувати іншу порожню локальну *_test БД, встановити для неї конфігурацію та застосувати ту саму міграцію.
-3. **Підключення і seeder.** Виконайте `npm run db:seed` двічі, `npm run db:check` та запит COUNT нижче. Зніміть фактичний вивід. За потреби додайте підсумок `npm test`.
-4. **Конфігурація.** Відкрийте в редакторі саме `.env.example`, щоб у кадрі було видно ім'я файлу та CHANGE_ME. Не відкривайте реальний .env, env.sh або змінні процесу. Не виконуйте echo DATABASE_URL, Get-ChildItem Env:, printenv чи подібні команди.
+## Межі та відтворення
 
-У хмарі після source env.sh можна виконати:
+README містить Cloud/Windows команди. Windows у цій задачі не запускався. Initial застосований SQL не редагувався; нові зміни у подальшому оформлювати наступними міграціями. Дані з невідомими старими категоріями/порожніми required metadata потребують свідомого виправлення перед deploy — не автоматичного втрачання/вигадування значень. Ціна 3+ дробових знаків відхиляється сервером; звичайна PostgreSQL coercion до decimal не є API-валідатором.
 
-```bash
-psql -X -c 'SELECT migration_name, finished_at, rolled_back_at FROM _prisma_migrations;'
-psql -X -c 'SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM master_profiles) AS master_profiles, (SELECT count(*) FROM services) AS services, (SELECT count(*) FROM orders) AS orders;'
-```
-
-На Windows відкрийте psql локально з паролем через запит, а не аргумент connection string:
-
-```powershell
-psql -h 127.0.0.1 -p 5432 -U fixit_test -d fixit_test
-```
-
-І виконайте ті самі SELECT у psql. Для знімків Windows використовуйте Win+Shift+S або інший звичайний засіб захоплення фактичного екрана. Назви можливих власних файлів: `06-er.png`, `06-migrations.png`, `06-seed.png`, `06-env-example.png`; наявність цих файлів тут не заявляється. Внесок інших учасників команди не приписується.
+Скріншоти, CI-результати, внесок учасників не вигадувалися. PR #2/його гілка не змінювалися. Секрети, .env та реальні рядки підключення до PR не додаються.
