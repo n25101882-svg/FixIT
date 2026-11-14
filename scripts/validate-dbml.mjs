@@ -7,8 +7,14 @@ const { Parser, exporter } = require("@dbml/core");
 const source = readFileSync("docs/er-diagram.dbml", "utf8");
 const database = Parser.parse(source, "dbmlv2");
 const tables = database.schemas.flatMap((schema) => schema.tables);
-if (tables.length !== 4 || tables.map((table) => table.name).sort().join(",") !== "master_profiles,orders,services,users") {
-  throw new Error("DBML must contain the four MVP tables.");
+if (
+  tables.length !== 5 ||
+  tables
+    .map((table) => table.name)
+    .sort()
+    .join(",") !== "master_profiles,order_responses,orders,services,users"
+) {
+  throw new Error("DBML must contain the five Hybrid MVP tables.");
 }
 // A one-to-one DBML Ref puts the FK on its second endpoint. Verify the
 // exported direction, rather than accepting a diagram that merely parses.
@@ -17,8 +23,30 @@ for (const [child, field, parent] of [
   ["master_profiles", "user_id", "users"],
   ["services", "master_profile_id", "master_profiles"],
   ["orders", "client_id", "users"],
-  ["orders", "service_id", "services"],
 ]) {
-  assert.ok(sql.includes(`ALTER TABLE "${child}" ADD CONSTRAINT "${child}_${field}_fkey" FOREIGN KEY ("${field}") REFERENCES "${parent}" ("id") ON DELETE RESTRICT ON UPDATE CASCADE`), `Incorrect DBML FK: ${child}.${field}`);
+  assert.ok(
+    sql.includes(
+      `ALTER TABLE "${child}" ADD CONSTRAINT "${child}_${field}_fkey" FOREIGN KEY ("${field}") REFERENCES "${parent}" ("id") ON DELETE RESTRICT ON UPDATE CASCADE`,
+    ),
+    `Incorrect DBML FK: ${child}.${field}`,
+  );
 }
-console.log("DBML valid: 4 tables; all 4 FK directions and delete/update policies verified.");
+for (const [child, field, parent] of [
+  ["orders", "master_profile_id", "master_profiles"],
+  ["order_responses", "order_id", "orders"],
+  ["order_responses", "master_profile_id", "master_profiles"],
+]) {
+  assert.ok(
+    sql.includes(
+      `ALTER TABLE "${child}" ADD CONSTRAINT "${child}_${field}_fkey" FOREIGN KEY ("${field}") REFERENCES "${parent}" ("id") ON DELETE RESTRICT ON UPDATE RESTRICT`,
+    ),
+  );
+}
+assert.ok(
+  sql.includes(
+    'FOREIGN KEY ("service_id", "master_profile_id") REFERENCES "services" ("id", "master_profile_id")',
+  ),
+);
+console.log(
+  "DBML valid: 5 tables; 7 FK, including STANDARD service/master composite ownership.",
+);

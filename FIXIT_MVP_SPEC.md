@@ -1,60 +1,67 @@
-# FixIT — специфікація MVP
+# FixIT — Hybrid MVP 1.0
 
-FixIT допомагає клієнту знайти послугу майстра та оформити замовлення. Це основа реального продукту: одна PostgreSQL, Express/TypeScript backend, Prisma, згодом React/Vite frontend. Обсяг цього етапу — **практична №6: модель даних, міграція, з'єднання, seeder та перевірки**.
+Практична №6: міграційна еволюція наявної PostgreSQL 18 / Prisma 7.10.1 бази, п’ять сутностей і серверні правила STANDARD/CUSTOM. Це не новий Prisma-проєкт. Initial migration `20261109200000_init_database_schema` збережена без змін; доповнення — `20261114130000_hybrid_mvp`.
 
-## Межі реалізації
+## Межі й ролі
 
-Зараз реалізуються схема та інфраструктура backend: `/health`, `/health/ready`, перевірка БД перед відкриттям HTTP-порту, коректне завершення процесу, SQL-міграція та синтетичні fixtures. Реєстрація, авторизація, бізнес-API та frontend ще не реалізовані. Описані нижче функції задають межі **майбутнього MVP**, а не заявляють про готові маршрути.
+Публічні ролі продукту — CLIENT і MASTER. ADMIN залишений у старому PostgreSQL enum/User як внутрішня сумісність, не є публічною роллю реєстрації; адміністративного UI немає. User/passwordHash/email/UUID контракт не змінюється для майбутнього інтегрування PR #2.
 
-## Ролі та функції майбутнього MVP
+- CLIENT створює STANDARD/CUSTOM заявки, бачить свою історію, обирає одну пропозицію для власного OPEN CUSTOM та скасовує свою заявку до початку роботи.
+- MASTER із власним профілем подає одну пропозицію на OPEN CUSTOM. Лише призначений майстер приймає/відхиляє STANDARD, починає й завершує роботу.
+- ADMIN не обходить бізнес-правила сервісу. Жодної публічної можливості призначити себе ADMIN ця гілка не додає.
 
-| Роль | Дозволені дії |
+Auth/JWT/React залишаються у відкритому PR #2. Ця гілка не копіює його залежності, middleware або frontend. Існуючий Express backend має /health та /health/ready; нові мутації доступні тільки через внутрішній серверний `createOrderService`, а не незахищені HTTP endpoints. Переданий actorId має надходити з довіреної автентифікації, ніколи не з request body. Роль та належність перевіряються повторно за БД.
+
+## Фізична модель
+
+Усі PK — UUID із PostgreSQL gen_random_uuid(), часові поля — TIMESTAMPTZ(3). Фізичні назви snake_case зафіксовані в DBML і Prisma @@map/@map.
+
+| Prisma / SQL | Дані та зв’язки |
 | --- | --- |
-| CLIENT | Перегляд активних послуг схвалених майстрів; фільтр за категорією та містом; створення замовлення; перегляд власних замовлень; скасування власного PENDING/ACCEPTED замовлення. |
-| MASTER | Заповнення власного профілю; створення й редагування власних послуг; деактивація послуги; перегляд замовлень на власні послуги; прийняття, виконання та завершення цих замовлень. Публічний каталог показує послуги лише після схвалення профілю. |
-| ADMIN | Перегляд користувачів і профілів; схвалення/відкликання схвалення майстра; деактивація неприйнятних послуг; перегляд замовлень для адміністрування. |
+| User / users | Незмінні id, email UNIQUE/canonical lowercase, passwordHash, name, role, createdAt. Пароль тільки як хеш. CLIENT має N Orders; MASTER має 0..1 профіль. |
+| MasterProfile / master_profiles | id, userId UNIQUE FK, city, category, nullable description. Категорія обов’язкова, типовий OTHER. Старий nullable bio перейменований без втрати NULL/тексту. isApproved збережений як внутрішнє старе поле; нового approval workflow/UI немає. |
+| Service / services | id, masterProfileId FK, title, category, description, price decimal(10,2), isActive. Один майстер має N готових послуг. Технічний UNIQUE(id, masterProfileId) потрібний для складеного FK замовлення. |
+| Order / orders | id, clientId FK, type, nullable serviceId/masterProfileId/priceAtOrder, title, city, category, description, status, createdAt, updatedAt, statusHistory JSONB. Nullable колонки дозволені глобально через CUSTOM, але CHECK вимагає правильну форму для конкретного type/status. |
+| OrderResponse / order_responses | id, orderId FK, masterProfileId FK, proposedPrice decimal(10,2), message, createdAt; UNIQUE(orderId, masterProfileId). Це пропозиція майстра, а не Review/рейтинг. |
 
-Користувач має одну роль. MASTER не є CLIENT у межах цього MVP. Фізичне видалення замовлених послуг/пов'язаних користувачів не є функцією MVP: використовуються `isActive`/`isApproved`, а FK зберігають історію.
+Enums: order_type = STANDARD/CUSTOM; order_status = OPEN/PENDING/ACCEPTED/IN_PROGRESS/COMPLETED/CANCELLED/DECLINED; category = TECH_REPAIR/PLUMBING/ELECTRICAL/OTHER. Значення category однакові для профілів, послуг і заявок. Місто/категорія — атрибути пошуку, а не прихована додаткова заборона майстру з іншого міста подати пропозицію.
 
-## Чотири базові сутності
+## Гроші й перенесення даних
 
-| Prisma model / SQL table | Дані та обмеження |
-| --- | --- |
-| User / users | UUID PK; унікальний email до 254 символів у нижньому регістрі без крайових пробілів; passwordHash до 255 символів; name до 100 символів; role ADMIN/CLIENT/MASTER; createdAt TIMESTAMPTZ(3). Усе NOT NULL. |
-| MasterProfile / master_profiles | UUID PK; обов'язковий унікальний userId FK → users: зв'язок 1:1; city до 100 символів; nullable bio TEXT; isApproved BOOLEAN NOT NULL DEFAULT false. Профіль може належати лише MASTER. |
-| Service / services | UUID PK; masterProfileId FK → master_profiles; title до 160; category до 80; description TEXT; priceCents INTEGER ≥ 0; isActive BOOLEAN DEFAULT true. Усе NOT NULL. |
-| Order / orders | UUID PK; clientId FK → users; serviceId FK → services; description TEXT; priceAtOrderCents INTEGER ≥ 0; status ENUM DEFAULT PENDING; createdAt TIMESTAMPTZ(3). Усе NOT NULL. Клієнт має роль CLIENT. |
+Єдина валюта — UAH. price, priceAtOrder та proposedPrice — DECIMAL(10,2), діапазон 0.00–99999999.99; CHECK відкидає також NaN. Для команд із зовнішньою ціною використовується десятковий **рядок** до двох дробових цифр, без exponent/float та неявного округлення. Prisma.Decimal не переводиться у JavaScript Number для арифметики.
 
-UUID генерує PostgreSQL через вбудовану `gen_random_uuid()`, додаткове розширення не потрібне. `createdAt` генерується БД і зберігає момент часу; клієнтський UI згодом форматує його у часовому поясі користувача. Єдина валюта MVP — гривня, цілі значення зберігаються в копійках; 25000 означає 250,00 грн. Float/Decimal для грошей тут не використовується. Категорія — строковий код, окрема таблиця категорій не потрібна на цьому етапі.
+Міграція перейменовує price_cents → price і price_at_order_cents → price_at_order та виконує точне PostgreSQL numeric / 100. Наприклад, 1 → 0.01, 25000 → 250.00, 2147483647 → 21474836.47. Старий integer діапазон повністю вміщується у DECIMAL(10,2). ID, client/service links, опис, статус і createdAt старих Orders зберігаються. Усі вони стають STANDARD; masterProfileId/title/city/category заповнюються з наявного зв’язку Service → MasterProfile на час міграції. Історичні значення цих раніше відсутніх полів не вигадуються.
 
-User → MasterProfile: 1 до 0..1; профіль → послуги: 1:N; CLIENT → Orders: 1:N; Service → Orders: 1:N. `Orders` є асоціативною сутністю клієнтів і послуг із власними атрибутами. Повторне замовлення тієї самої послуги дозволене, тому немає UNIQUE(clientId, serviceId). `masterId` у замовленні не дублюється: майстер визначається через Service → MasterProfile → User.
+Один спостережений legacy-статус записується у statusHistory з source=legacy_migration і часом **міграції**, разом із legacyCreatedAt. Це не реконструкція відсутньої повної історії. updatedAt для старого запису також встановлюється на час міграції. Оригінальний createdAt незмінний.
 
-Усі FK мають ON DELETE RESTRICT та ON UPDATE CASCADE. Видалення батьківського запису з нащадками завершується помилкою, а не втратою історії. Індексовані FK; додаткові індекси підтримують каталог `(category, isActive)` та списки замовлень `(clientId, createdAt)` / `(status, createdAt)`.
+Старі невідомі строкові категорії не замінюються мовчки на OTHER: міграція атомарно відмовляється, доки власник явно не класифікує їх. Так само відхиляються порожні обов’язкові старі title/city/order description. Нова категорія профілю виводиться з єдиної категорії його послуг; за відсутності/неоднозначності — OTHER, бо старого значення профілю не було.
 
-## Інваріанти та життєвий цикл
+## Правила STANDARD
 
-- PK, FK, UNIQUE, NOT NULL та enum забезпечує PostgreSQL/Prisma. SQL CHECK забороняє від'ємні ціни й неканонічні email. Перед майбутнім записом email нормалізується через trim/toLowerCase.
-- SQL triggers перевіряють MASTER для профілю, CLIENT для замовлення та забороняють зміну ролі, яка порушує вже існуючі зв'язки. Перевірки батьківського користувача беруть row lock, щоб синхронізуватися зі зміною ролі. Додаткових таблиць для ролей немає.
-- Майбутнє створення замовлення має в одній транзакції перевіряти `isActive` і `isApproved`, брати поточний `priceCents` та записувати його у `priceAtOrderCents`. Зміна ціни послуги не змінює попередніх замовлень. В initial migration перевіряється діапазон ціни; бізнес-операція створення замовлення ще не реалізована.
-- Допустимі майбутні переходи: PENDING → ACCEPTED або CANCELLED; ACCEPTED → IN_PROGRESS або CANCELLED; IN_PROGRESS → COMPLETED або CANCELLED. COMPLETED/CANCELLED — кінцеві. Рольові дозволи й переходи реалізовуватимуться в сервісному шарі бізнес-API, а не в цій практичній.
-- Зміна видимості майстра/послуги не скасовує наявних замовлень автоматично. Їхня історія зберігається.
-- Паролі зберігаються лише як хеші. Seeder використовує scrypt із випадковою сіллю та випадковим, відкинутим вхідним секретом: спільного тестового пароля немає. Це не реалізація авторизації.
+serviceId/masterProfileId/priceAtOrder обов’язкові; початковий статус PENDING. Складений FK (serviceId, masterProfileId) → Service(id, masterProfileId) гарантує, що послуга належить цьому майстру. Сервер перевіряє CLIENT, активність послуги та відповідність майстра, бере shared row lock і копіює поточну ціну/метадані в заявку. Наступна зміна ціни послуги не переписує snapshot заявки.
 
-## Seeder
+## Правила CUSTOM
 
-Тільки локальна БД з назвою, що закінчується на `_test`. П'ять синтетичних користувачів (ADMIN, два CLIENT, два MASTER), два профілі, три послуги та два замовлення. Адреси використовують зарезервований домен `.test`, імена та міста синтетичні.
+Початковий OPEN, serviceId=NULL, masterProfileId=NULL, priceAtOrder=NULL. Обов’язкові непорожні city/title/description та валідна category. Профілі MASTER можуть додавати OrderResponse лише до OPEN CUSTOM; ціна й message обов’язкові, одна пропозиція від одного профілю. Зміна пропозиції не є функцією цього MVP.
 
-Upsert виконується в одній транзакції, паралельні запуски серіалізує PostgreSQL advisory lock. Користувачі визначаються за email, профілі — за userId, послуги й замовлення — за стабільними UUID. Повторний запуск не створює дублікатів, не змінює наявні passwordHash/createdAt та не переписує ціну/статус попередніх замовлень. Сторонні дані не видаляються. Це fixtures для розробки й тестів, а не production-ініціалізація.
+Лише CLIENT-власник заявки може обрати пропозицію саме цієї заявки. В одній транзакції сервер бере FOR UPDATE на Order, повторно перевіряє OPEN/відсутність призначення, знаходить OrderResponse і встановлює masterProfileId, priceAtOrder=proposedPrice, status=ACCEPTED. Конкурентний вибір серіалізується: одна транзакція перемагає, інша отримує CONFLICT; другого виконавця чи зайвої події історії немає. SQL trigger також перевіряє наявність відповідної пропозиції/ціни. Вибраного майстра й snapshot потім не можна перепризначити.
 
-## Що не входить до MVP та поточної практичної
+## Статуси та належність
 
-Agreements, Reviews, OAuth, платежі та чат не реалізуються. Не додаються дубльовані зв'язки, окремі таблиці для кожної ролі чи таблиця client_services. Авторизація, React UI, CRUD і переходи статусів залишаються наступними окремо погодженими кроками. До практичної №7 цей етап не переходить.
+| Поточний стан | Наступний | Хто |
+| --- | --- | --- |
+| CUSTOM OPEN | ACCEPTED | CLIENT-власник через selectResponse |
+| CUSTOM OPEN | CANCELLED | CLIENT-власник |
+| STANDARD PENDING | ACCEPTED / DECLINED | Призначений MASTER |
+| STANDARD PENDING | CANCELLED | CLIENT-власник |
+| ACCEPTED | IN_PROGRESS | Призначений MASTER |
+| ACCEPTED | CANCELLED | CLIENT-власник або призначений MASTER |
+| IN_PROGRESS | COMPLETED / CANCELLED | Призначений MASTER |
 
-## Артефакти №6
+COMPLETED/CANCELLED/DECLINED — кінцеві. Переходи в той самий стан та пропуски кроків відхиляються. CUSTOM не використовує PENDING/DECLINED. Сервер читає власність/роль із БД під транзакцією; SQL trigger незалежно забороняє недопустимі переходи, зміну початкового type/client/service та snapshot. statusHistory автоматично доповнюється подіями status/at/actorUserId/source, прямий rewrite відхиляється. actorUserId із transaction-local context — аудит серверної команди, не заміна JWT-автентифікації.
 
-- `docs/er-diagram.dbml` — фізична ER-діаграма для dbdiagram.io.
-- `prisma/schema.prisma` та `prisma/migrations/*_init_database_schema/migration.sql` — модель і реальна міграція; custom CHECK/triggers зберігаються в SQL, бо Prisma DSL не описує їх повністю.
-- `src/database/client.ts`, `src/server.ts` — з'єднання та стартова перевірка.
-- `src/database/seed.ts`, `prisma/seed.ts` — ідемпотентний seeder.
-- `README.md` — команди Windows/Codex Cloud та правила локальних БД.
-- `docs/PRACTICAL_6.md` — фактичні перевірки та інструкція для справжніх скріншотів.
+## SQL-обмеження та історія
+
+7 FK, включно зі складеним Service/master FK; PK/UNIQUE/NOT NULL/enum; CHECK форми STANDARD/CUSTOM, цін, тексту, JSON-історії та canonical email. Збережені role triggers №6; додані orders_guard_hybrid й order_responses_guard. Операції з пропозиціями блокують батьківську заявку, тому запис/видалення не переганяє вибір виконавця. Вибрану пропозицію видалити не можна. FK використовують RESTRICT для видалення пов’язаних записів; історія не каскадно знищується. Видалення чи очищення історії не є публічною операцією MVP.
+
+Не додаються шоста таблиця історії, дубльований accepted-response flag, ADMIN UI, Auth із PR #2, Reviews, платежі, OAuth або чат. Подальші endpoint-и мають бути захищені middleware PR #2 та викликати саме серверні команди.
