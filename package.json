@@ -25,7 +25,8 @@
     "frontend:dev": "npm run dev --workspace @fixit/frontend --",
     "frontend:build": "npm run build --workspace @fixit/frontend",
     "frontend:test": "npm run test --workspace @fixit/frontend",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test",
+    "test:migrations": "npm run build && node scripts/verify-migrations.mjs"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
