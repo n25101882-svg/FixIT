@@ -87,6 +87,8 @@ hybrid-env.sh — приватний helper середовища поза Git, �
 
 Prisma використовує штатний engine з binaries.prisma.sh із TLS/checksum verification. Rust/source-built override більше не потрібний. Для migrate dev потрібна окрема SHADOW_DATABASE_URL; поточні migrations застосовуються через migrate deploy. Не використовуйте prisma db push або migrate reset.
 
+Якщо справжній Prisma deploy зупинився на legacy-preflight, спочатку перевірте transaction rollback, резервну копію й збереження записів; явно виправте лише погоджені категорії/порожні metadata. Після підтвердження, що Hybrid DDL не застосувався, failed migration можна позначити rolled back через `node node_modules/prisma/build/index.js migrate resolve --rolled-back 20261114130000_hybrid_mvp` і повторити deploy. Не позначайте її applied для приховування помилки, не редагуйте initial і не запускайте reset. У виконаних перевірках відмову перевіряли як SQL-preflight з rollback, тому Prisma failed-state recovery тут не виконувався.
+
 ## Backend і команди
 
 Backend перевіряє реальне SQL-з’єднання до HTTP listen, /health повертає liveness, /health/ready виконує SELECT 1. HOST/PORT типово 127.0.0.1/3000. SIGINT/SIGTERM закриває HTTP та пул. db:check перевіряє версію, п’ять таблиць і наявність Hybrid migration. Запуск backend не виконує seed/міграції.
