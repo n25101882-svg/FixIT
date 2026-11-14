@@ -1,45 +1,47 @@
-# FixIT — Hybrid MVP 1.0
+# FixIT — Hybrid MVP і Practical №7 Auth
 
-Практична №6: PostgreSQL 18, Prisma 7.10.1, Node.js 24 LTS/npm 11, Express/TypeScript. П’ять сутностей: User, MasterProfile, Service, Order (STANDARD/CUSTOM), OrderResponse. Auth/React із відкритого PR #2 у цю гілку не включені.
+Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Hybrid database PR #3 merged у develop (`f7d7684`); PR #2 додає Auth/app skeleton та атомарну реєстрацію MASTER поверх цієї бази.
 
-[Специфікація](FIXIT_MVP_SPEC.md) · [DBML](docs/er-diagram.dbml) · [Звіт №6 та інтеграція з PR #2](docs/PRACTICAL_6.md).
+П’ять таблиць: users, master_profiles, services, orders, order_responses. Усі три застосовані SQL-міграції з develop збережені без змін. Грошові поля — decimal(10,2), зокрема nullable Service.priceEstimate (`price_estimate`); Float не використовується. [Специфікація](FIXIT_MVP_SPEC.md), [фізична DBML](docs/er-diagram.dbml), [звіт №6](docs/PRACTICAL_6.md), [звіт №7 і screenshot QA](docs/PRACTICAL_7.md).
 
-## Основні файли
+## Що працює
 
-- prisma/schema.prisma — модель; datasource URL тільки у prisma.config.ts.
-- prisma/migrations/20261109200000_init_database_schema — незмінена initial migration.
-- prisma/migrations/20261114130000_hybrid_mvp — незмінене послідовне перетворення зі збереженням даних.
-- prisma/migrations/20261114150000_review_snapshot_alignment — наступна міграція: незмінні snapshot-поля, optional ціни/бюджет, узгодження фізичних назв.
-- src/orders/service.ts — транзакційні createStandard/createCustom/respond/selectResponse/transition.
-- src/database/seed.ts — синтетичні idempotent fixtures для всіх п’яти таблиць.
-- scripts/verify-migrations.mjs — перевірка чистої БД та upgrade старих записів.
+- POST `/api/v1/auth/register`: CLIENT → тільки User; MASTER → одна транзакція User + MasterProfile + перша Service. Валідація до запису, помилка будь-якого INSERT/commit → rollback, success лише після commit. Публічна ADMIN-реєстрація і mass assignment заборонені.
+- POST `/api/v1/auth/login`: salted scrypt password verification і короткоживучий HS256 JWT; secret тільки з environment.
+- GET `/api/v1/users/me`: JWT-захист, лише id/email/name/role; missing/invalid/expired → 401. Точні CORS origins, JSON size limit і auth rate limiting збережені.
+- React `/register`, `/login`, protected `/dashboard`, повідомлення про помилки і logout. MASTER-поля показуються лише для MASTER; CLIENT їх не надсилає. Token лише в пам’яті; refresh потребує повторного входу.
+- `/health`, `/health/ready` та внутрішній `src/orders/service.ts` збережені. Каталог/order routes, Reviews, ADMIN UI, платежі та чат не додаються.
 
-Гроші — UAH decimal(10,2): nullable priceEstimate/price_estimate, priceAtOrder, proposedPrice і CUSTOM budget. Невідома ціна — NULL, не нуль. Старі cents точно діляться на 100; задані нові суми — десяткові рядки, без float/неявного округлення. User й passwordHash контракт збережено для майбутнього Auth. ADMIN — лише внутрішня сумісність; нового публічного призначення ADMIN немає.
+## Windows / PowerShell
 
-## Локально на Windows (PowerShell)
+Потрібні Git, Node 24/npm 11, PostgreSQL 18 і psql у PATH. Використовуйте окремі локальні *_test БД; fixit_dev/production не використовувати для тестів/seed. Жодного Docker/WSL/домашньої мережі для Cloud не потрібно.
 
-Потрібні Git, Node 24/npm 11, запущена PostgreSQL 18, psql у PATH. Не використовуйте fixit_dev/production або базу з потрібними даними для тестів. Роль fixit_test має бути звичайним локальним login без SUPERUSER/CREATEDB/CREATEROLE. Якщо вона вже є після №6, не перевизначайте пароль і не видаляйте її.
-
-Одноразово через свого локального адміністратора (`psql -h 127.0.0.1 -U postgres -d postgres`) створіть лише відсутні тестові БД:
+Через власного локального адміністратора (`psql -h 127.0.0.1 -U postgres -d postgres`) створіть **лише відсутні** роль і тестові БД. Якщо роль/БД уже існують, не видаляйте й не перевизначайте пароль автоматично.
 
 ```sql
--- Тільки якщо роль ще не існує:
+-- Тільки якщо роль відсутня:
 CREATE ROLE fixit_test LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
 \password fixit_test
-CREATE DATABASE fixit_hybrid_test OWNER fixit_test;
-CREATE DATABASE fixit_hybrid_shadow OWNER fixit_test;
--- Дві окремі НОВІ ПОРОЖНІ БД для migration verification:
-CREATE DATABASE fixit_hybrid_clean_test OWNER fixit_test;
-CREATE DATABASE fixit_hybrid_upgrade_test OWNER fixit_test;
+CREATE DATABASE fixit_auth_hybrid_test OWNER fixit_test;
+CREATE DATABASE fixit_shadow OWNER fixit_test;
+-- Дві окремі НОВІ ПОРОЖНІ *_test БД тільки для test:migrations:
+CREATE DATABASE fixit_auth_hybrid_clean_test OWNER fixit_test;
+CREATE DATABASE fixit_auth_hybrid_upgrade_test OWNER fixit_test;
 ```
-
-Пароль вводиться локально через запит psql; не публікуйте його. Для БД із даними потрібні окрема перевірка й резервна копія, а не reset. Ця інструкція створює нові ізольовані БД.
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-У приватному .env задайте DATABASE_URL/TEST_DATABASE_URL для fixit_hybrid_test, SHADOW_DATABASE_URL для окремої fixit_hybrid_shadow. Для додаткової перевірки — CLEAN_DATABASE_URL і UPGRADE_DATABASE_URL для двох порожніх *_test БД вище. Значення пароля у URL має бути percent-encoded. Приклад не містить реальних credentials; .env ігнорується Git. Підтримана схема — public.
+У приватному .env задайте власний percent-encoded пароль локальної ролі, DATABASE_URL/TEST_DATABASE_URL для fixit_auth_hybrid_test, SHADOW_DATABASE_URL для окремої fixit_shadow. Схема — public. Для test:migrations задайте CLEAN_DATABASE_URL і UPGRADE_DATABASE_URL двох порожніх БД вище, відмінних від головної. Не публікуйте .env, паролі чи реальні URL.
+
+Згенеруйте випадковий JWT_SECRET локально і перенесіть значення **тільки** у приватний .env:
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
+```
+
+Не знімайте цей вивід для звіту. JWT_SECRET має бути мінімум 32 bytes, JWT_TTL_SECONDS типово 900. Після налаштування:
 
 ```powershell
 npm ci
@@ -47,6 +49,7 @@ npm run db:generate
 npm run db:validate
 npm run db:migrate
 npm run db:status
+npm run db:migrate
 npm run db:seed
 npm run db:seed
 npm run db:check
@@ -54,52 +57,70 @@ npm run typecheck
 npm run er:validate
 npm test
 npm run build
+npm run frontend:build
+npm run frontend:test
 npm run test:migrations
-npm start
 ```
 
-`npm run test:migrations` не очищує БД: відмовиться працювати, якщо clean/upgrade бази не порожні. Для нового прогону створіть нову пару порожніх *_test БД і змініть лише їхні приватні environment bindings. Після прогону БД збережені для огляду. Ні reset, ні db push не використовуються. Команди Windows документовані, але фактичні перевірки цього PR виконані в Linux Cloud.
+Prisma CLI читає .env, тому Windows PowerShell не потребує `export` для цих команд. Jest/Playwright читають TEST_DATABASE_URL через конфігурацію проєкту з .env. Migration verifier відмовиться на непорожніх clean/upgrade БД; для повторного прогону створіть нову пару порожніх *_test БД та змініть приватні bindings. Бази після перевірки збережені, reset/drop не виконується.
+
+У першому терміналі:
+
+```powershell
+npm run dev
+# Або після npm run build: npm start
+```
+
+У другому, з кореня репозиторію:
+
+```powershell
+npm run frontend:dev
+```
+
+Backend: **http://127.0.0.1:3000**, frontend: **http://127.0.0.1:5173**. VITE_API_URL типово http://127.0.0.1:3000/api/v1; root CORS_ORIGINS містить точні http://127.0.0.1:5173 і http://localhost:5173. Optional frontend/.env створюйте з frontend/.env.example; жодних JWT_SECRET/DATABASE_URL у VITE_*.
+
+Для Playwright використайте Chromium поточного runner:
+
+```powershell
+npm exec playwright install chromium
+npm run test:e2e
+```
+
+На Windows не задавайте Linux PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH. E2E запускає власні сервери на **4100/5174** із випадковим environment secret; це окремі test ports, а не звичайні 3000/5173. Використовується явний локальний TEST_DATABASE_URL; існуючі сервери не перевикористовуються. Trace/video/screenshots вимкнені, test-results і playwright-report ігноруються Git. Windows/Postman QA тут **документована, не виконана**.
 
 ## Codex Cloud
 
-Використовуйте наявний checkout. Кластер локальний для Cloud, не залежить від домашніх Windows/WSL/PostgreSQL, Docker не потрібний. У підготовленій машині:
+Cloud має власний локальний PostgreSQL кластер, незалежний від домашнього Windows/WSL. У поточній підготовленій машині:
 
 ```bash
 cd /workspace/FixIT
 bash /workspace/.fixit-dev/bin/pg.sh start
-source /workspace/.fixit-dev/review-snapshot-env.sh
+source /workspace/.fixit-dev/auth-hybrid-env.sh
 unset PRISMA_SCHEMA_ENGINE_BINARY PRISMA_MIGRATION_ENGINE_BINARY
 npm ci
 npm run db:generate
 npm run db:validate
 npm run db:migrate
-npm run db:migrate
-npm run db:seed
-npm run db:seed
+npm run db:status
 npm run typecheck
 npm run er:validate
 npm test
-npm run build
-npm run db:check
-npm start
+npm run frontend:build
+npm run frontend:test
+npm run test:e2e
+npm run test:migrations
 ```
 
-review-snapshot-env.sh — приватний helper цього review поза Git. Він використовує наявний hybrid-env.sh, читає пароль із локального захищеного файлу й задає окремі дозволені *_test URL. Якщо його немає в іншій машині, налаштуйте власні ізольовані TEST/DATABASE/SHADOW bindings і доступ до локальної PostgreSQL перед командами. Автоматичного відновлення цього helper у новій задачі не заявляємо. Порт поточного тестового кластера — 127.0.0.1:55432. Реальні рядки підключення не друкуйте.
+auth-hybrid-env.sh — приватний helper цієї машини поза Git; задає окремі *_test БД на 127.0.0.1:55432 й установлену /usr/bin/chromium. На іншій машині налаштуйте власні дозволені TEST/DATABASE/SHADOW bindings та Chromium; автоматичного відновлення helper не заявляємо. У цьому helper немає production-секретів. Для ручного dev додатково задайте JWT_SECRET через захищене environment або приватний .env; E2E генерує власний випадковий secret.
 
-Prisma використовує штатний engine з binaries.prisma.sh із TLS/checksum verification. Rust/source-built override більше не потрібний. Для migrate dev потрібна окрема SHADOW_DATABASE_URL; поточні migrations застосовуються через migrate deploy. Не використовуйте prisma db push або migrate reset.
+Prisma працює зі штатним engine, TLS/checksum verification не вимикаються, Rust compilation/override не потрібні. URL задається у prisma.config.ts. Для migrate dev потрібна окрема shadow database. Використовуйте migrate deploy, не db push/reset; для робочих даних потрібні окрема перевірка/backup. Backend startup не виконує seed/міграцій, перевіряє SQL-з’єднання перед listen; SIGINT/SIGTERM закриває пул.
 
-Якщо справжній Prisma deploy зупинився на legacy-preflight, спочатку перевірте transaction rollback, резервну копію й збереження записів; явно виправте лише погоджені категорії/порожні metadata. Після підтвердження, що Hybrid DDL не застосувався, failed migration можна позначити rolled back через `node node_modules/prisma/build/index.js migrate resolve --rolled-back 20261114130000_hybrid_mvp` і повторити deploy. Не позначайте її applied для приховування помилки, не редагуйте initial і не запускайте reset. У виконаних перевірках відмову перевіряли як SQL-preflight з rollback, тому Prisma failed-state recovery тут не виконувався.
+## Реєстрація та QA
 
-## Backend і команди
+Спільні поля: name, email, password, **passwordConfirmation**, role CLIENT/MASTER (типово CLIENT). MASTER додатково: city, category (TECH_REPAIR/PLUMBING/ELECTRICAL/OTHER), profileDescription, serviceTitle, serviceDescription; optional priceEstimate, наприклад рядок `"250.50"`. Описи окремі, profile/first Service отримують одну category; ніяких placeholder. CLIENT MASTER-полів не надсилає. Межі/повні JSON/Postman приклади — у звіті №7.
 
-Backend перевіряє реальне SQL-з’єднання до HTTP listen, /health повертає liveness, /health/ready виконує SELECT 1. HOST/PORT типово 127.0.0.1/3000. SIGINT/SIGTERM закриває HTTP та пул. db:check перевіряє версію, п’ять таблиць і всі три застосовані migrations. Запуск backend не виконує seed/міграції.
+У Cloud фактично пройшли **145 backend тестів** (усі попередні **82 Hybrid** + **23 Auth** + **40 інтеграційних FIX-1**), **12 frontend тестів**, **5 browser E2E**. Перевірені rollback реальної помилки першої Service, duplicate/race email, валідація до запису, обидві ролі, JWT/CORS/rate limits, nullable exact prices і три міграції clean/legacy upgrade. Повний список команд і результатів — [PRACTICAL_7.md](docs/PRACTICAL_7.md).
 
-У src/orders/service.ts всі мутації перевіряють роль і належність та виконуються транзакційно. createStandard бере активну Service/майстра й фіксує ціну; createCustom починає OPEN; respond бере профіль actor-а з БД; selectResponse серіалізує конкурентний вибір через FOR UPDATE; transition перевіряє дозволений стан/власника. Наразі це **внутрішній сервіс**, а не незахищений REST API: actorId у майбутньому передаватиме перевірений JWT middleware PR #2, не клієнтський body.
+Auth/browser тести створюють випадково іменовані синтетичні акаунти та видаляють тільки їхні Service → Profile → User, не обходячи RESTRICT FK. Hybrid concurrency-тест навмисно лишає одну власну синтетичну заявку/пропозиції на кожний прогін тільки в ізольованій *_test БД; інші мутації відкочуються. Seed fixtures: 5 users / 2 profiles / 3 services / 3 orders / 2 responses; global counts після concurrency можуть бути більшими. Seed-акаунти не мають відомого спільного пароля; для login створіть свій синтетичний account.
 
-Seed містить 5 users (з legacy ADMIN), 2 профілі, 3 послуги, 2 STANDARD + 1 OPEN CUSTOM і 2 пропозиції. PasswordHash/createdAt/ціни й статуси наявних Orders не переписуються. Синтетичні @fixit.test акаунти не мають відомого спільного пароля. Seed і Jest вимагають локальну *_test БД, TEST_DATABASE_URL не підміняється DATABASE_URL.
-
-82 Jest/Supertest перевірки охоплюють ролі, FK/UNIQUE/CHECK, статуси, типи, точні ціни, snapshot, history, seed, backend та реальну конкурентну selection. Один concurrency-тест навмисно залишає власну синтетичну заявку/пропозиції в ізольованій тестовій БД: це два справжні committed transactions, а не mock. Кожний повний прогін concurrency-тесту залишає одну таку заявку. Інші мутації тестів відкочуються. Не використовуйте ці тести проти робочих даних.
-
-test:migrations окремо виконує clean deploy усіх трьох міграцій, seed/rerun, initial-only legacy fixtures, перевіряє атомарну відмову невідомої категорії, upgrade п’яти старих замовлень спочатку до незміненої Hybrid, потім до review-міграції, snapshot/rollback захист і повторний deploy без змін. Основна тестова БД та clean/upgrade мають бути різними. SQL-обмеження й план інтеграції Auth: docs/PRACTICAL_6.md.
-
-Звірка з наданою ER і звітами №4–5 та уточнення nullable/legacy полів: FIXIT_MVP_SPEC.md і docs/PRACTICAL_6.md. FIX-1 ще потребує в PR #2 атомарної MASTER-реєстрації User + MasterProfile + першої Service та rollback-тесту endpoint. Тут перевірена тільки транзакційна можливість БД; Auth/React не додані.
+Для №7 потрібні три **справжні** screenshots: Postman POST login 200 із замаскованим JWT, браузер /dashboard із synthetic email, backend terminal із database connected/listen. Покрокова інструкція — у [звіті №7](docs/PRACTICAL_7.md). Звітні screenshots, Windows чи Postman execution тут не вигадуються.
