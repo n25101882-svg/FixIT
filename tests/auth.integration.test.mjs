@@ -32,6 +32,7 @@ const register = (name, extra = {}) =>
     .send({
       email: email(name),
       password,
+      passwordConfirmation: password,
       name: "Синтетичний користувач",
       ...extra,
     });
@@ -49,7 +50,12 @@ beforeAll(async () => {
   ).body.accessToken;
 });
 afterAll(async () => {
-  await database.user.deleteMany({ where: { email: { endsWith: suffix } } });
+  const owner = { email: { endsWith: suffix } };
+  await database.$transaction(async (tx) => {
+    await tx.service.deleteMany({ where: { masterProfile: { user: owner } } });
+    await tx.masterProfile.deleteMany({ where: { user: owner } });
+    await tx.user.deleteMany({ where: owner });
+  });
   await database.$disconnect();
 });
 
@@ -77,12 +83,16 @@ describe("registration and credentials", () => {
     });
     expect(stored.passwordHash).not.toBe(other.passwordHash);
   });
-  test("allows MASTER registration without inventing a city/profile", async () => {
-    const { body } = await register("master", { role: "MASTER" }).expect(201);
+  test("registers MASTER with the supplied profile and first service", async () => {
+    const { body } = await register("master", {
+      role: "MASTER", city: "Синтетичне місто", category: "OTHER",
+      profileDescription: "Синтетичний профіль", serviceTitle: "Синтетична послуга",
+      serviceDescription: "Опис синтетичної послуги",
+    }).expect(201);
     expect(body.user.role).toBe("MASTER");
     expect(
       await database.masterProfile.count({ where: { userId: body.user.id } }),
-    ).toBe(0);
+    ).toBe(1);
   });
   test("logs in and returns a signed expiring JWT and a safe user DTO", async () => {
     const { body } = await request(app)

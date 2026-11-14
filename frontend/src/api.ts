@@ -10,6 +10,25 @@ export interface LoginResponse {
   expiresIn: number;
   user: User;
 }
+export type ServiceCategory = "TECH_REPAIR" | "PLUMBING" | "ELECTRICAL" | "OTHER";
+interface RegistrationFields {
+  email: string;
+  password: string;
+  passwordConfirmation: string;
+  name: string;
+}
+export type RegistrationRequest = RegistrationFields & (
+  | { role: "CLIENT" }
+  | {
+      role: "MASTER";
+      city: string;
+      category: ServiceCategory;
+      profileDescription: string;
+      serviceTitle: string;
+      serviceDescription: string;
+      priceEstimate?: string;
+    }
+);
 export class ApiError extends Error {
   constructor(
     public readonly status: number,

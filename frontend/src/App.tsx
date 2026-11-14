@@ -8,11 +8,17 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { api, ApiError, type LoginResponse, type User } from "./api";
+import { api, ApiError, type LoginResponse, type RegistrationRequest, type ServiceCategory, type User } from "./api";
 import { useAuth } from "./auth";
 import "./styles.css";
 
 const roles = { CLIENT: "Клієнт", MASTER: "Майстер", ADMIN: "Адміністратор" };
+const categories: Record<ServiceCategory, string> = {
+  TECH_REPAIR: "Ремонт техніки",
+  PLUMBING: "Сантехніка",
+  ELECTRICAL: "Електрика",
+  OTHER: "Інше",
+};
 
 function ArrowIcon() {
   return (
@@ -106,6 +112,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [role, setRole] = useState<"CLIENT" | "MASTER">("CLIENT");
   if (token) return <Navigate to="/dashboard" replace />;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -118,14 +125,28 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
     const password = String(values.get("password") ?? "");
     try {
       if (registration) {
+        const passwordConfirmation = String(values.get("passwordConfirmation") ?? "");
+        if (password !== passwordConfirmation)
+          throw new ApiError(400, "Перевірте підтвердження пароля.", {
+            passwordConfirmation: "Підтвердження має збігатися з паролем.",
+          });
+        const common = { email, password, passwordConfirmation, name: String(values.get("name") ?? "") };
+        const estimate = String(values.get("priceEstimate") ?? "").trim();
+        const payload: RegistrationRequest = role === "MASTER"
+          ? {
+              ...common,
+              role: "MASTER",
+              city: String(values.get("city") ?? ""),
+              category: String(values.get("category") ?? "") as ServiceCategory,
+              profileDescription: String(values.get("profileDescription") ?? ""),
+              serviceTitle: String(values.get("serviceTitle") ?? ""),
+              serviceDescription: String(values.get("serviceDescription") ?? ""),
+              ...(estimate ? { priceEstimate: estimate } : {}),
+            }
+          : { ...common, role: "CLIENT" };
         await api<{ user: User }>("/auth/register", {
           method: "POST",
-          body: {
-            email,
-            password,
-            name: String(values.get("name")),
-            role: String(values.get("role")),
-          },
+          body: payload,
         });
         navigate("/login", {
           replace: true,
@@ -291,6 +312,14 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
               <small id="password-hint">
                 Від 12 до 128 символів. Можна використати фразу.
               </small>
+              <label htmlFor="passwordConfirmation">Підтвердження пароля</label>
+              <input
+                id="passwordConfirmation" name="passwordConfirmation" type="password"
+                autoComplete="new-password" required minLength={12} maxLength={128}
+                aria-invalid={!!fields.passwordConfirmation}
+                aria-describedby={fields.passwordConfirmation ? "passwordConfirmation-error" : undefined}
+              />
+              {fieldError("passwordConfirmation")}
               <fieldset className="role-picker">
                 <legend>Я приєднуюсь як</legend>
                 <label>
@@ -298,7 +327,8 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
                     type="radio"
                     name="role"
                     value="CLIENT"
-                    defaultChecked
+                    checked={role === "CLIENT"}
+                    onChange={() => { setRole("CLIENT"); setFields({}); setError(""); }}
                   />
                   <span>
                     <strong>Клієнт</strong>
@@ -306,7 +336,8 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
                   </span>
                 </label>
                 <label>
-                  <input type="radio" name="role" value="MASTER" />
+                  <input type="radio" name="role" value="MASTER" checked={role === "MASTER"}
+                    onChange={() => { setRole("MASTER"); setFields({}); setError(""); }} />
                   <span>
                     <strong>Майстер</strong>
                     <small>Пропоную свої вміння</small>
@@ -314,6 +345,42 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
                 </label>
               </fieldset>
               {fieldError("role")}
+              {role === "MASTER" && (
+                <fieldset className="master-fields">
+                  <legend>Профіль майстра</legend>
+                  <label htmlFor="city">Місто</label>
+                  <input id="city" name="city" autoComplete="address-level2" required maxLength={100}
+                    aria-invalid={!!fields.city} aria-describedby={fields.city ? "city-error" : undefined} />
+                  {fieldError("city")}
+                  <label htmlFor="category">Категорія</label>
+                  <select id="category" name="category" required defaultValue=""
+                    aria-invalid={!!fields.category} aria-describedby={fields.category ? "category-error" : undefined}>
+                    <option value="" disabled>Оберіть категорію</option>
+                    {Object.entries(categories).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                  {fieldError("category")}
+                  <label htmlFor="profileDescription">Опис профілю</label>
+                  <textarea id="profileDescription" name="profileDescription" rows={3} required maxLength={2000}
+                    placeholder="Розкажіть про свій досвід і вміння."
+                    aria-invalid={!!fields.profileDescription} aria-describedby={fields.profileDescription ? "profileDescription-error" : undefined} />
+                  {fieldError("profileDescription")}
+                  <h3>Перша послуга</h3>
+                  <label htmlFor="serviceTitle">Назва першої послуги</label>
+                  <input id="serviceTitle" name="serviceTitle" required maxLength={160}
+                    aria-invalid={!!fields.serviceTitle} aria-describedby={fields.serviceTitle ? "serviceTitle-error" : undefined} />
+                  {fieldError("serviceTitle")}
+                  <label htmlFor="serviceDescription">Опис першої послуги</label>
+                  <textarea id="serviceDescription" name="serviceDescription" rows={3} required maxLength={2000}
+                    placeholder="Яку допомогу ви пропонуєте?"
+                    aria-invalid={!!fields.serviceDescription} aria-describedby={fields.serviceDescription ? "serviceDescription-error" : undefined} />
+                  {fieldError("serviceDescription")}
+                  <label htmlFor="priceEstimate">Орієнтовна ціна, грн (необов’язково)</label>
+                  <input id="priceEstimate" name="priceEstimate" type="text" inputMode="decimal"
+                    maxLength={11} pattern={"[0-9]{1,8}(\\.[0-9]{1,2})?"} placeholder="Наприклад, 250.50"
+                    aria-invalid={!!fields.priceEstimate} aria-describedby={fields.priceEstimate ? "priceEstimate-error" : undefined} />
+                  {fieldError("priceEstimate")}
+                </fieldset>
+              )}
             </>
           )}
           {error && (
@@ -333,6 +400,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
             onClick={() => {
               setError("");
               setFields({});
+              setRole("CLIENT");
             }}
           >
             {registration ? "Увійти" : "Створити акаунт"}

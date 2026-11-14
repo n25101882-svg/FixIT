@@ -35,6 +35,20 @@ async function fillLogin() {
   await actions.click(screen.getByRole("button", { name: "Увійти" }));
   return actions;
 }
+async function fillRegistration(actions: ReturnType<typeof userEvent.setup>) {
+  await actions.type(screen.getByLabelText("Ім’я"), user.name);
+  await actions.type(screen.getByLabelText("Email"), user.email);
+  await actions.type(screen.getByLabelText("Пароль"), "Synthetic test password");
+  await actions.type(screen.getByLabelText("Підтвердження пароля"), "Synthetic test password");
+}
+async function fillMaster(actions: ReturnType<typeof userEvent.setup>) {
+  await actions.click(screen.getByRole("radio", { name: /Майстер/ }));
+  await actions.type(screen.getByLabelText("Місто"), "Тестоград");
+  await actions.selectOptions(screen.getByLabelText("Категорія"), "PLUMBING");
+  await actions.type(screen.getByLabelText("Опис профілю"), "Синтетичний досвід майстра");
+  await actions.type(screen.getByLabelText("Назва першої послуги"), "Синтетична послуга");
+  await actions.type(screen.getByLabelText("Опис першої послуги"), "Опис синтетичної послуги");
+}
 afterEach(() => vi.unstubAllGlobals());
 
 describe("authentication navigation", () => {
@@ -118,20 +132,20 @@ describe("authentication navigation", () => {
     vi.stubGlobal("fetch", fetchMock);
     const actions = userEvent.setup();
     renderApp("/register");
-    await actions.type(screen.getByLabelText("Ім’я"), user.name);
-    await actions.type(screen.getByLabelText("Email"), user.email);
-    await actions.type(
-      screen.getByLabelText("Пароль"),
-      "Synthetic test password",
-    );
-    await actions.click(screen.getByRole("radio", { name: /Майстер/ }));
+    await fillRegistration(actions);
+    await fillMaster(actions);
     await actions.click(
       screen.getByRole("button", { name: "Створити акаунт" }),
     );
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Акаунт створено",
     );
-    expect(JSON.parse(fetchMock.mock.calls[0]?.[1].body).role).toBe("MASTER");
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1].body)).toEqual({
+      email: user.email, name: user.name, password: "Synthetic test password",
+      passwordConfirmation: "Synthetic test password", role: "MASTER", city: "Тестоград",
+      category: "PLUMBING", profileDescription: "Синтетичний досвід майстра",
+      serviceTitle: "Синтетична послуга", serviceDescription: "Опис синтетичної послуги",
+    });
     expect(
       screen.queryByRole("radio", { name: /Адміністратор/ }),
     ).not.toBeInTheDocument();
@@ -158,12 +172,7 @@ describe("authentication navigation", () => {
     );
     const actions = userEvent.setup();
     renderApp("/register");
-    await actions.type(screen.getByLabelText("Ім’я"), user.name);
-    await actions.type(screen.getByLabelText("Email"), user.email);
-    await actions.type(
-      screen.getByLabelText("Пароль"),
-      "Synthetic test password",
-    );
+    await fillRegistration(actions);
     await actions.click(
       screen.getByRole("button", { name: "Створити акаунт" }),
     );
@@ -175,5 +184,77 @@ describe("authentication navigation", () => {
       "true",
     );
     expect(screen.getByText("Оберіть інший email.")).toBeInTheDocument();
+  });
+  test("MASTER fields are conditional and are never sent for CLIENT after a role switch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({ user }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    const actions = userEvent.setup();
+    renderApp("/register");
+    expect(screen.queryByLabelText("Місто")).not.toBeInTheDocument();
+    await fillRegistration(actions);
+    await fillMaster(actions);
+    await actions.type(screen.getByLabelText(/Орієнтовна ціна/), "123.40");
+    await actions.click(screen.getByRole("radio", { name: /Клієнт/ }));
+    expect(screen.queryByLabelText("Опис профілю")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Назва першої послуги")).not.toBeInTheDocument();
+    await actions.click(screen.getByRole("button", { name: "Створити акаунт" }));
+    await screen.findByRole("status");
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1].body)).toEqual({
+      email: user.email, name: user.name, password: "Synthetic test password",
+      passwordConfirmation: "Synthetic test password", role: "CLIENT",
+    });
+  });
+  test("optional MASTER price is sent as the exact string", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({ user: { ...user, role: "MASTER" } }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    const actions = userEvent.setup();
+    renderApp("/register");
+    await fillRegistration(actions);
+    await fillMaster(actions);
+    await actions.type(screen.getByLabelText(/Орієнтовна ціна/), "123.40");
+    await actions.click(screen.getByRole("button", { name: "Створити акаунт" }));
+    await screen.findByRole("status");
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1].body).priceEstimate).toBe("123.40");
+  });
+  test("MASTER validation feedback remains attached to the fields without navigating", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(json({ error: {
+      message: "Перевірте поля форми.", fields: { city: "Перевірте місто.", serviceDescription: "Уточніть опис послуги." },
+    } }, 400));
+    vi.stubGlobal("fetch", fetchMock);
+    const actions = userEvent.setup();
+    renderApp("/register");
+    await fillRegistration(actions);
+    await fillMaster(actions);
+    await actions.click(screen.getByRole("button", { name: "Створити акаунт" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Перевірте поля форми.");
+    expect(screen.getByLabelText("Місто")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Опис першої послуги")).toHaveAttribute("aria-describedby", "serviceDescription-error");
+    expect(screen.getByText("Уточніть опис послуги.")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Майстер/ })).toBeChecked();
+  });
+  test("mismatched password confirmation prevents the request", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const actions = userEvent.setup();
+    renderApp("/register");
+    await fillRegistration(actions);
+    await actions.clear(screen.getByLabelText("Підтвердження пароля"));
+    await actions.type(screen.getByLabelText("Підтвердження пароля"), "Different test password");
+    await actions.click(screen.getByRole("button", { name: "Створити акаунт" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Перевірте підтвердження пароля.");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Підтвердження пароля")).toHaveAttribute("aria-invalid", "true");
+  });
+  test("required MASTER fields block an incomplete submission", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const actions = userEvent.setup();
+    renderApp("/register");
+    await fillRegistration(actions);
+    await actions.click(screen.getByRole("radio", { name: /Майстер/ }));
+    await actions.click(screen.getByRole("button", { name: "Створити акаунт" }));
+    expect(screen.getByLabelText("Місто")).toBeInvalid();
+    expect(screen.getByLabelText("Опис першої послуги")).toBeRequired();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

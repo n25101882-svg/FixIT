@@ -1,132 +1,188 @@
-# Практична №7 — авторизація й app skeleton FixIT
+# Практична №7 — Auth і атомарна MASTER-реєстрація
 
-Дата перевірок: **10 листопада 2026 року**. База — актуальна `develop` після merged PR #1 (№6), commit `a814a61`. Гілка реалізації: `feature/practical-07-auth-skeleton`. Посилання на єдиний PR надане в підсумковому звіті чату/GitHub; merge автоматично не виконується.
+Реалізація та фактична інтеграційна перевірка **14.11.2026**, гілка `feature/practical-07-auth-skeleton`, [PR #2](https://github.com/n25101882-svg/FixIT/pull/2) до develop. Виконано [інтеграційне завдання з Conversation](https://github.com/n25101882-svg/FixIT/pull/2#issuecomment-6880147986) після merge [PR #3](https://github.com/n25101882-svg/FixIT/pull/3).
 
-## Етап 1: хмарне середовище
+## Основа та збереження Hybrid
 
-GitHub API доступний: читальний GraphQL repository-запит успішний і повернув viewerPermission ADMIN. `binaries.prisma.sh` повернув HTTP 200 для офіційного checksum-файлу. Дозволи мережі застосовані (observations_current=true, network_policy.state=enforced). Авторизація GitHub відокремлена від доступності мережі; HTTP 401/403 самі по собі не вважаються мережевим блокуванням.
+Актуальний develop `f7d7684ee0751e436a4a4165acca7bc1137bb8d9` інтегровано локальним merge-комітом `eddaefd`; конфлікти README.md, FIXIT_MVP_SPEC.md та package.json розв’язані. Збережено frontend/Auth workspace dependencies/scripts і Hybrid test:migrations. Lockfile вже містив Auth/frontend dependencies, змін не потребував; чистий npm ci підтвердив узгодженість.
 
-PostgreSQL збережена в окремому локальному кластері `/workspace/.fixit-dev/postgres/data`, запущена через pg.sh: **18.6**, `127.0.0.1:55432`, БД fixit_test та fixit_shadow. Production-секрети, домашній Windows/WSL/PostgreSQL і Docker не використовувалися.
+Від develop **побайтово незмінні** Prisma schema, фізична DBML, src/orders/service.ts, усі чотири файли попередніх 82 тестів та три міграції:
 
-На незміненій базі №6 виконані: npm ci, Prisma Generate/Validate, migrate deploy, typecheck, build і **25/25 тестів**. Міграція вже застосована, результат повторного deploy — No pending migrations to apply. Офіційний schema engine встановлений штатно в node_modules/@prisma/engines; source-built override не використовувався, Rust не запускався. TLS/checksum validation не вимикалися. Версії: Node.js 24.22.1, npm 11.9.0, Prisma 7.10.1.
+1. `20261109200000_init_database_schema`
+2. `20261114130000_hybrid_mvp`
+3. `20261114150000_review_snapshot_alignment`
 
-## Реалізовані контракти
+Нових таблиць/міграцій не додано. Схема — users/master_profiles/services/orders/order_responses, Prisma 7.10.1, PostgreSQL 18, decimal(10,2). Поточна auth-реалізація працює поверх Hybrid, не повертає 4-табличну модель/cents. `fixit_dev`, production, домашній PostgreSQL/WSL не використовувалися. Reset/db push не запускалися. PR #2 автоматично не merge-иться.
 
-### Реєстрація
+## API та критерії FIX-1
 
-`POST /api/v1/auth/register`, Content-Type application/json:
+### Реєстрація CLIENT
+
+POST `http://127.0.0.1:3000/api/v1/auth/register`, Content-Type application/json:
 
 ```json
 {
   "email": "synthetic-client@fixit.test",
   "password": "<власна локальна тестова фраза від 12 символів>",
+  "passwordConfirmation": "<та сама локальна тестова фраза>",
   "name": "Синтетичний клієнт",
   "role": "CLIENT"
 }
 ```
 
-201 → `{ "user": { "id", "email", "name", "role" } }`. Email нормалізується (trim/lowercase), унікальність гарантує існуюча БД, зокрема при паралельних запитах. Password 12–128 символів, name 2–100. Role лише CLIENT/MASTER (за замовчуванням CLIENT); ADMIN, зайві/захищені поля й невалідні значення → 400. Повторний email → 409. MASTER не отримує штучний профіль із вигаданим city: його заповнення — майбутній крок.
+CLIENT створює **тільки User**. MASTER-поля в CLIENT payload відхиляються, а не ігноруються/масово присвоюються. Role без значення типово CLIENT; ADMIN/невідомий role → 400. PasswordConfirmation додано як обов’язкове поле обох ролей відповідно до FIX-1; старі ручні POST-запити потрібно доповнити ним.
 
-Хеш: scrypt N=32768/r=8/p=3, сіль 16 випадкових байтів, ключ 64 байти. Пароль не зберігається відкритим текстом. Для login підтриманий також старий scrypt-формат seeder №6; самі seed-акаунти не мають відомих паролів.
+### Реєстрація MASTER
 
-### Вхід і поточний користувач
+```json
+{
+  "email": "synthetic-master@fixit.test",
+  "password": "<власна локальна тестова фраза від 12 символів>",
+  "passwordConfirmation": "<та сама локальна тестова фраза>",
+  "name": "Синтетичний майстер",
+  "role": "MASTER",
+  "city": "Синтетичне місто",
+  "category": "PLUMBING",
+  "profileDescription": "Синтетичний опис досвіду майстра.",
+  "serviceTitle": "Перша синтетична послуга",
+  "serviceDescription": "Синтетичний короткий опис цієї послуги.",
+  "priceEstimate": "250.50"
+}
+```
 
-`POST /api/v1/auth/login`, body: `{ "email": "...", "password": "..." }`.
+priceEstimate можна **не передавати**, тоді в БД NULL; JSON number, null, empty string, negative/overflow/NaN/exponent/comma або 3+ fractional digits відхиляються. React порожню ціну пропускає; заповнену передає рядком без Float/Number. Обидва описи окремі: profileDescription описує майстра, serviceDescription — послугу. Автоматично не дублюємо їх і не вигадуємо місто/послугу.
 
-200 → accessToken, tokenType=Bearer, expiresIn=900 (типово), user із чотирма публічними полями. Неправильний пароль і відсутній акаунт отримують однаковий 401. Для невідомого акаунта також виконується scrypt-порівняння, щоб зменшити різницю часу відповіді.
+| Поле | Валідація до запису |
+| --- | --- |
+| name | trim, 2–100 символів |
+| email | trim/lowercase, email, максимум 254; UNIQUE у PostgreSQL |
+| password / passwordConfirmation | 12–128 символів, точний збіг, без trim пароля |
+| role | CLIENT / MASTER, типово CLIENT; ADMIN заборонено |
+| city | MASTER required, trim, 1–100 |
+| category | MASTER required: TECH_REPAIR / PLUMBING / ELECTRICAL / OTHER |
+| profileDescription | MASTER required, trim, 1–2000 |
+| serviceTitle | MASTER required, trim, 1–160 (межа збереженої Hybrid схеми) |
+| serviceDescription | MASTER required, trim, 1–2000 |
+| priceEstimate | MASTER optional, exact decimal string, 1–8 integer digits, до 2 fractional digits, 0..99999999.99 |
 
-`GET /api/v1/users/me`, header `Authorization: Bearer <accessToken>` → 200 з id/email/name/role. Missing/invalid/expired token, неправильні key/algorithm/audience, відсутній exp або видалений користувач → 401. PasswordHash ніколи не включається до user DTO.
+Невідомі/захищені поля (id, passwordHash, isApproved, nested ownership тощо) відхиляються strict-schema до hash/запису. MASTER виконує **одну Prisma transaction**: User → MasterProfile → перша Service; обидві category з одного перевіреного input. isApproved — legacy false, не approval gate; Service.isActive типово true. Помилка будь-якого INSERT або commit відкочує все. Лише після await успішного commit надсилається **201** `{user:{id,email,name,role}}`; passwordHash і token не повертаються. Реєстрація веде на /login, JWT видається окремим login.
 
-JWT — HS256, issuer fixit-api, audience fixit-web, subject UUID користувача, перевірений exp. Secret тільки з environment, мінімум 32 байти; у репозиторії лише порожній зразок. Роль читається з БД при users/me. CORS приймає лише явно налаштовані origins локального frontend, без wildcard/cookies. Auth-запити обмежені до 30 за 15 хвилин на IP; JSON до 16 KB, помилки не повертають паролів, токенів, SQL чи stack traces.
+Validation → 400 з field errors; duplicate/race canonical email → 409 EMAIL_TAKEN; несподівана DB-помилка → redacted 500 без SQL/stack/credentials/201/token. UNIQUE email і транзакція гарантують, що race не створює додаткові профілі/послуги.
 
-Операційні /health та /health/ready збережені для регресії №6. Prisma schema, DBML і SQL-міграція №6 залишені без змін; нових таблиць/міграцій немає.
+### Login та users/me
+
+POST `/api/v1/auth/login`, body `{ "email": "...", "password": "..." }` → 200 з accessToken, tokenType=Bearer, expiresIn (типово 900), user із чотирма полями. Неправильний пароль/відсутній account → однаковий 401; unknown account теж виконує scrypt comparison.
+
+Паролі: salted scrypt N=32768/r=8/p=3, random salt 16 bytes, key 64 bytes. Старий seed scrypt N=16384/r=8/p=1 також підтриманий; hashes не переписуються, спільного відомого seed-пароля немає.
+
+JWT: HS256, issuer fixit-api, audience fixit-web, subject User.id UUID, exp. JWT_SECRET тільки з environment, мінімум 32 bytes; middleware перевіряє підпис, algorithm/issuer/audience/subject/exp. GET `/api/v1/users/me` із Bearer → 200 лише id/email/name/role з актуального User. Missing/invalid/expired token, wrong key/algorithm/audience, missing exp або deleted account → 401. Жодного passwordHash у DTO.
+
+Точні CORS origins для localhost/127.0.0.1:5173, без wildcard/cookies; auth limiter 30/15 хвилин/IP; JSON до 16 KB; redacted errors і no-store збережені. /health і /health/ready працюють. Order/catalog endpoints не додаються; Hybrid команди залишаються внутрішніми.
 
 ## Frontend
 
-React + Vite + TypeScript, React Router; npm workspace frontend/ і спільний кореневий lockfile. /register дозволяє обрати CLIENT/MASTER, показує помилки й після успіху веде на /login. Login отримує access token, /dashboard виконує справжній users/me і показує email, ім’я та роль. Protected Route переводить гостя на /login; відповідь users/me 401 очищує сесію і повідомляє про повторний вхід. Logout очищує пам’ять.
+React/Vite/TypeScript workspace frontend/, React Router. /register умовно показує MASTER city/category/profile description/first service fields, optional price; CLIENT їх не відправляє навіть після перемикання ролі. Password confirmation перевіряється в UI і на сервері. Обов’язкові поля, accessible labels/field errors, busy state, responsive layout збережені.
 
-Access token зберігається лише в пам’яті вкладки, без localStorage/sessionStorage. Refresh сторінки вимагає нового входу. UI адаптований для desktop і mobile; зовнішні шрифти/зображення не завантажуються. Каталог, замовлення, відгуки, платежі не реалізовувалися.
+Після register → /login; після login → /dashboard, який виконує реальний users/me і показує email/name/role. Protected Route перенаправляє гостя; users/me 401 очищує сесію; logout очищує token і веде на login. Token тільки в пам’яті, без localStorage/sessionStorage; refresh вимагає login. Не додаються ADMIN UI, каталог/замовлення/Reviews/платежі/чат.
 
 ## Фактичні перевірки
 
-| Перевірка | Результат |
+Середовище: Node 24.22.1, npm 11.9.0, Prisma 7.10.1, TypeScript 5.9.3, PostgreSQL 18.6, Chromium 156.0.8078.79. Використані нові окремі loopback БД `fixit_auth_hybrid_test`, `fixit_auth_hybrid_clean_test`, `fixit_auth_hybrid_upgrade_test` та окрема shadow. Credentials/URL не публікуються.
+
+| Команда / перевірка | Фактичний результат |
 | --- | --- |
-| Етап 1, незмінена №6 | 25/25 тестів, Generate/Validate/typecheck/build успішні |
-| Чистий npm ci за оновленим workspace lockfile | Успіх; штатний Prisma Engine без Rust |
-| npm run db:generate / db:validate / typecheck / build | Успіх |
-| npm test | **48/48**, 3 suites; включено всі 25 тестів №6 та 23 нові auth/HTTP/config тести |
-| npm run frontend:build | TypeScript і production Vite bundle успішні |
-| npm run frontend:test | **7/7**, форми, помилки, in-memory token, users/me, logout і expired-session redirect |
-| npm run test:e2e | **5/5**, справжні Express/PostgreSQL + Vite + Chromium 156 |
-| E2E CLIENT та MASTER | Реєстрація → login error → правильний login → users/me → dashboard → logout; без passwordHash |
-| E2E додатково | Гість перенаправлений; duplicate email показаний; mobile 390×844 без горизонтального overflow |
-| DB regression | PK/FK/UNIQUE/NOT NULL/enum/CHECK/role guards/delete policy/seed idempotence продовжують проходити |
-| Schema/migration/DBML diff проти develop | Без змін |
+| npm ci --no-audit --no-fund | Чисте встановлення 635 packages за збереженим workspace lockfile |
+| npm run db:generate / db:validate | Client 7.10.1 згенеровано; schema valid |
+| npm run db:migrate / db:status | Усі 3 міграції застосовані; schema up to date; повторний deploy No pending migrations |
+| npm run typecheck | Backend, seed, Prisma config/TS helpers — PASS |
+| npm run er:validate | 5 таблиць, 7 FK включно зі складеним ownership service/master — PASS |
+| npm test | **145/145, 6 suites, 0 failed/skipped**: незмінені 82 Hybrid + 23 Auth + 40 FIX-1 endpoint integration |
+| npm run build | TypeScript backend build — PASS (також виконувався test/e2e/migration scripts) |
+| npm run frontend:build | Frontend TypeScript + Vite production build — PASS |
+| npm run frontend:test | **12/12**: попередні 7 сценаріїв + 5 conditional MASTER/CLIENT, price string, confirmation, validation cases |
+| npm run test:e2e | **5/5**, реальні Express/PostgreSQL + Vite + Chromium, без mocks HTTP/БД |
+| npm run test:migrations | **PASS**, нова порожня clean/upgrade pair, всі 3 міграції, повторний deploy/seed, legacy upgrade/backfill/rollback |
+| npm run db:check | SQL connection, PostgreSQL 18.6, 5 таблиць, всі 3 applied migrations |
+| prisma migrate diff --from-migrations prisma/migrations --to-config-datasource --exit-code | No difference detected, exit 0 |
+| Git byte comparison з develop | Усі 3 SQL, Prisma schema, DBML, order commands і 4 файли 82 тестів незмінні |
+| Після cleanup Auth/E2E | **0** тимчасових Auth/registration/browser accounts; **0** test-only SQL constraints |
 
-Негативні JWT тести охоплюють missing, invalid, expired, wrong signature, HS384 замість HS256, wrong audience, missing exp, deleted account. Окремо перевірено ADMIN/mass-assignment rejection, CORS, 429 rate limit, malformed/oversized JSON та необхідність environment secret. Auth/browser тести створюють випадково іменовані синтетичні акаунти й прибирають лише їх; SQL-історія №6 збережена.
+Нові endpoint-тести: кожна категорія MASTER із nullable price, точні 0/12.34/max decimal; CLIENT лише User; actual DB failure першої Service → 500 без success/token, нуль часткових записів, наступний retry успішний; duplicate canonical email; паралельні MASTER/MASTER і CLIENT/MASTER → один 201, один 409 без orphan. Invalid required fields/bounds/category/money/confirmation/ADMIN/mass assignment → 400 **до $transaction**, counts незмінні. Для MASTER додатково перевірені login 200 + JWT, users/me 200/401, safe DTO.
 
-Frontend unit-тести використовують контрольовані HTTP-відповіді; browser E2E — реальні запити до ізольованої PostgreSQL. Windows та Postman у цьому середовищі не запускалися; їхні інструкції наведені для ручної QA, а не як виконані перевірки. Скріншот JWT у Postman не вигадувався. Для візуальної перевірки UI зняті справжні тимчасові Chromium captures; вони не додаються до Git як звітні докази користувача.
+Для справжньої помилки третього INSERT тест тимчасово додає CHECK із випадковим synthetic marker **тільки в перевірену *_test БД**, надсилає валідний payload і перевіряє повний rollback. CHECK видаляється у finally; міграційні файли не редагуються. Auth/E2E cleanup видаляє тільки власні synthetic records у порядку Service → Profile → User, не обходить RESTRICT FK.
 
-## Запуск і відтворення
+Перший backend-прогін мав 6 помилок нового test helper: пошук за uppercase email не враховував правильну server lowercase-нормалізацію. Helper виправлено; фінальний повний прогін — 145/145. Попередні JWT/CORS/rate-limit/JSON/hash tests не послаблювалися. npm має успадковане glob deprecation warning; Jest — VM modules experimental warning, Playwright — color-env warning. Вони не є skipped tests; security audit не заявляється.
 
-Повні Windows/PostgreSQL/Cloud команди: [README.md](../README.md). Схему №6 застосовуйте `npm run db:migrate`, не db push/reset. Для dev потрібен власний локальний JWT_SECRET; фронтенду цей секрет не передається.
+E2E: guest redirect; реальні CLIENT і MASTER register → wrong password → login → users/me → dashboard → logout, перевірка persisted Profile/Service/category/decimal для MASTER та відсутності Profile у CLIENT; duplicate email; mobile MASTER form 390×844 без horizontal overflow. Frontend unit-тести mock HTTP, E2E — реальний backend/БД. Trace/video/screenshots runner-а вимкнені, секрети не записуються в звітні captures.
+
+Migration verifier окремо підтвердив clean chain/repeat seed без зміни persisted state, незмінений initial → 5 old Orders усіх старих statuses → незмінений Hybrid → review migration. Збережені IDs/links/descriptions/createdAt/exact cents (0/1/max int), legacy nullable biography/history; snapshot guard та rollback працюють; повторний deploy не змінив даних, applied checksums збігаються. Бази збережені для огляду, для нового прогону потрібна нова порожня pair.
+
+На головній test БД після двох backend-прогонів і E2E: **5 users / 2 profiles / 3 services / 5 orders / 6 responses**. Відмінність від seed fixtures (3 orders/2 responses) — дві синтетичні committed concurrency-перевірки Hybrid, по одній на прогін. Їхня історія навмисно збережена; це не користувацькі дані. Решта мутацій Hybrid відкочується.
+
+## Запуск, Windows і Cloud
+
+Детальні команди створення окремих test DB/ролі, приватного .env/JWT_SECRET, встановлення та запуску — [README](../README.md). Звичайні порти **backend 3000 / frontend 5173**. E2E окремо використовує **4100/5174**, генерує випадковий secret і не під’єднується до вже запущених серверів.
+
+Cloud у цій машині:
 
 ```bash
 cd /workspace/FixIT
-source /workspace/.fixit-dev/env.sh
 bash /workspace/.fixit-dev/bin/pg.sh start
-unset PRISMA_SCHEMA_ENGINE_BINARY PRISMA_MIGRATION_ENGINE_BINARY
-export JWT_SECRET="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(48).toString("hex"))')"
+source /workspace/.fixit-dev/auth-hybrid-env.sh
 npm ci
 npm run db:generate
+npm run db:validate
 npm run db:migrate
-npm run dev
-# В іншій оболонці: npm run frontend:dev
-```
-
-Frontend: 127.0.0.1:5173, backend: 127.0.0.1:3000, PostgreSQL: 127.0.0.1:55432. VITE_API_URL за замовчуванням http://127.0.0.1:3000/api/v1; CORS_ORIGINS містить точні localhost/127.0.0.1:5173. Не додавайте JWT_SECRET/DATABASE_URL до frontend VITE_* змінних.
-
-Перевірки (явний TEST_DATABASE_URL — тільки локальна *_test БД):
-
-```bash
+npm run db:status
 npm run typecheck
+npm run er:validate
 npm test
 npm run frontend:build
 npm run frontend:test
-export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 npm run test:e2e
+npm run test:migrations
 ```
 
-E2E запускає власні процеси на 4100/5174 та передає випадковий secret через environment, а не код. На Windows встановіть Playwright Chromium через `npm exec playwright install chromium` і не задавайте Linux executable path. Trace/video не записуються, щоб не зберігати bearer credentials.
+Helper приватний, поза Git, задає лише локальні test URLs/Chromium; на іншій машині потрібні власні дозволені bindings. Для ручного npm run dev потрібен JWT_SECRET із захищеного environment/приватного .env; у root .env.example він порожній. Ніякого TLS/checksum bypass/native engine override/Rust compilation. Prisma URL тільки у prisma.config.ts; migrate dev потребує окремої shadow. Не запускати reset/db push, не мігрувати fixit_dev без окремої перевірки/backup.
 
-## Реальний скріншот JWT у Postman
+Windows/PowerShell: налаштуйте root .env за .env.example, виконайте список npm-команд README; `npm run dev` у першому терміналі, `npm run frontend:dev` у другому. Для E2E на Windows `npm exec playwright install chromium`, не задавайте Linux executable path. **Windows і Postman тут не запускалися.**
 
-1. Запустіть локальний backend із власним випадковим JWT_SECRET. Створіть у Postman локальне environment: baseUrl=http://127.0.0.1:3000, email=власний унікальний синтетичний @fixit.test, password=локальна тестова фраза 12–128 символів. Password позначте як Secret, не публікуйте environment export зі значеннями.
-2. POST `{{baseUrl}}/api/v1/auth/register`, Body → raw → JSON:
+## Три обов’язкові справжні screenshots №7
+
+Нижче — інструкція отримання доказів вручну, а не твердження, що ці screenshots уже створені. Використовуйте власні synthetic @fixit.test accounts, не справжні персональні дані. Не публікуйте .env, JWT_SECRET, password, повний чинний JWT чи environment export із секретами.
+
+### 1. Postman: POST login 200, JWT замаскований
+
+1. Запустіть локальний backend з приватним JWT_SECRET. У Postman локально задайте baseUrl=http://127.0.0.1:3000, email=унікальний synthetic @fixit.test, password=свою тестову фразу. Password і accessToken — локальні Secret variables; environment зі значеннями не експортуйте.
+2. POST `{{baseUrl}}/api/v1/auth/register` із CLIENT JSON нижче, очікуйте реальний 201. Для MASTER додайте city/category/profileDescription/serviceTitle/serviceDescription з прикладу вище; optional priceEstimate — рядок. Для повторного email очікуваний 409; не змінюйте відповідь для screenshots.
 
 ```json
 {
   "email": "{{email}}",
   "password": "{{password}}",
+  "passwordConfirmation": "{{password}}",
   "name": "Синтетичний користувач",
   "role": "CLIENT"
 }
 ```
 
-Очікуйте 201; при повторному email — реальний 409, використайте свій інший синтетичний email або увійдіть в уже створений акаунт.
+3. POST `{{baseUrl}}/api/v1/auth/login`, raw JSON `{ "email": "{{email}}", "password": "{{password}}" }`, Send. У кадрі мають бути **метод/URL, HTTP 200 і справжня відповідь** accessToken/tokenType/expiresIn/user. Зробіть screenshot фактичного Postman; перед публікацією **замаскуйте значення JWT на копії знімка**, позначивши редагування «JWT замасковано». Не підміняйте статус/поля/результат. Secret/password не показуйте, environment panel закрийте.
+4. Додатково: локально використайте реальний token для GET `{{baseUrl}}/api/v1/users/me` з Bearer → 200, лише id/email/name/role; без Authorization → реальний 401. Authorization value також приховуйте у спільному звіті. Після QA завершіть локальну сесію/дочекайтеся exp або змініть dev-key.
 
-3. POST `{{baseUrl}}/api/v1/auth/login`, Body JSON `{ "email": "{{email}}", "password": "{{password}}" }`. Натисніть Send. Реальний результат — 200 із accessToken, tokenType, expiresIn та user. Зробіть знімок саме фактичної відповіді в Postman. Не показуйте значення JWT_SECRET або пароля. Для спільного звіту використовуйте лише локальний синтетичний токен; перед публікацією дочекайтеся його завершення або змініть dev-key. Не підставляйте намальований/чужий JWT.
-4. Збережіть accessToken як локальну Secret-змінну Postman. GET `{{baseUrl}}/api/v1/users/me`, Authorization → Bearer Token → `{{accessToken}}`. Перевірте 200 і лише id/email/name/role. Без Authorization отримайте фактичний 401.
+### 2. Browser: /dashboard із synthetic email
 
-## Реальний скріншот /dashboard
+1. Відкрийте **http://127.0.0.1:5173/register**. Перевірте CLIENT: MASTER-полів немає; MASTER: усі required profile/first Service поля з’являються, price optional. Заповніть справжні синтетичні дані, password confirmation і зареєструйтесь.
+2. Після переходу на /login увійдіть. На **/dashboard** дочекайтеся users/me; у кадрі мають бути browser URL, synthetic email, name, role та «Вийти». Зніміть фактичний браузер, на Windows можна Win+Shift+S. Не відкривайте token у DevTools для цього кадру.
+3. Перевірте logout → login і protected redirect. Refresh перед screenshot не робіть: in-memory token навмисно втрачається. Якщо оновили сторінку — увійдіть знову, не підставляйте дані вручну в DOM.
 
-1. Запустіть frontend і backend за README, відкрийте http://127.0.0.1:5173/register у звичайному браузері.
-2. Зареєструйте власні синтетичні CLIENT або MASTER дані, увійдіть через /login. Не використовуйте невідомі паролі seed-акаунтів №6.
-3. На /dashboard дочекайтеся завершення запиту users/me: мають бути видимі email, ім’я, роль і кнопка «Вийти». Зробіть справжній screenshot браузера; URL у кадрі має відповідати /dashboard. На Windows можна Win+Shift+S. Для mobile — реальний responsive viewport 390×844 у DevTools.
-4. Натисніть «Вийти» та перевірте перенаправлення /dashboard → /login. Не оновлюйте сторінку перед кадром: token навмисно лише в пам’яті, refresh вимагає повторного входу.
+### 3. Backend terminal: DB connected і listen
 
-Можливі власні назви файлів: 07-postman-jwt.png, 07-dashboard.png. Наявність цих звітних файлів тут не заявляється; вкладені ілюстрації чи скріншоти не фабрикуються.
+1. У приватному .env налаштовані isolated PostgreSQL/JWT_SECRET, PORT=3000. Запустіть `npm run dev` (або після build `npm start`). Не виконуйте поруч echo .env/DATABASE_URL/JWT_SECRET.
+2. Дочекайтеся **справжнього** рядка `FixIT backend listening on 127.0.0.1:3000; database connected.` — він з’являється після SQL connection check і успішного HTTP listen.
+3. Зніміть термінал із командою/цим рядком без секретів. Додатково можна показати реальний GET http://127.0.0.1:3000/health/ready → 200/database=up, але він не заміняє обов’язковий terminal кадр.
 
-## Межі цього етапу
+Можливі назви: 07-postman-login-masked.png, 07-dashboard.png, 07-backend-connected.png. Ці звітні файли тут не заявляються створеними; внесок інших учасників, Windows QA, screenshots і CI результати не вигадуються.
 
-Немає refresh tokens, server-side token revocation, password reset/email verification, каталогу/замовлень/відгуків/платежів. Logout локальний; отриманий JWT може діяти до exp. Зовнішнє розгортання потребує HTTPS і окремого керування секретами/origins; цей PR не є deployment. Rate limiter — in-memory для одного процесу. ADMIN публічно не створюється. Схему та початкову міграцію №6 не змінено. Після PR робота зупиняється без merge.
+## Обмеження та завершення
+
+Token лише in-memory, без refresh/revocation/password reset/email verification. Logout очищує клієнт, JWT може діяти до exp. Limiter — single-process memory store; зовнішній deployment потребує HTTPS/secret management/exact origins/SPA fallback і не є цим PR. Каталог/order routes/Reviews/ADMIN UI/payments/chat залишаються поза scope. PR #2 лишається відкритим до develop для review й локальної QA; автоматичного merge немає.

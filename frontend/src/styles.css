@@ -35,7 +35,9 @@ body {
   margin: 0;
 }
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 a {
@@ -56,7 +58,9 @@ button:disabled {
 }
 a:focus-visible,
 button:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid #91af76;
   outline-offset: 4px;
 }
@@ -281,13 +285,17 @@ main {
   margin: 0 0 28px;
   line-height: 1.6;
 }
-form > label {
+form > label,
+.master-fields > label {
   display: block;
   font-weight: 550;
   font-size: 12px;
   margin: 18px 0 8px;
 }
-form > input {
+form > input,
+.master-fields > input,
+.master-fields > select,
+.master-fields > textarea {
   display: block;
   width: 100%;
   height: 47px;
@@ -299,13 +307,16 @@ form > input {
   font-size: 13px;
   transition: border-color 0.15s;
 }
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: #a1aa9b;
 }
 input:hover {
   border-color: #a1b193;
 }
-input[aria-invalid="true"] {
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
   border-color: #b97059;
 }
 form > small {
@@ -414,6 +425,27 @@ form > small {
   font-size: 9px;
   color: var(--muted);
   margin-top: 4px;
+}
+.master-fields {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 16px 18px;
+  margin: 24px 0 0;
+}
+.master-fields legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.master-fields h3 {
+  margin: 24px 0 0;
+  font-size: 14px;
+}
+.master-fields > textarea {
+  min-height: 88px;
+  padding: 12px 13px;
+  resize: vertical;
 }
 .notice {
   padding: 12px 13px;
