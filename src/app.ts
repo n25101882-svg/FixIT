@@ -33,7 +33,7 @@ export function createApp(
             );
         },
         credentials: false,
-        methods: ["GET", "POST", "DELETE", "OPTIONS"],
+        methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allowedHeaders: ["Authorization", "Content-Type"],
         maxAge: 600,
       }),

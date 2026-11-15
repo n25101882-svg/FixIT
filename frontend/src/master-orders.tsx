@@ -22,16 +22,19 @@ function useMasterOrders(path: "available" | "assigned") {
     setLoading(true); setError("");
     try {
       const data = await api<{ orders: MasterOrder[] }>(`/master/orders/${path}`, { token: token!, signal: next.signal });
-      if (next.signal.aborted || request !== current.current) return;
+      if (next.signal.aborted || request !== current.current) return false;
       setOrders(data.orders); setForbidden(false);
+      return true;
     } catch (cause) {
       if (next.signal.aborted || request !== current.current) return;
       if (cause instanceof ApiError && cause.status === 401) logout(true);
       else { setForbidden(cause instanceof ApiError && cause.status === 403); setError(cause instanceof Error ? cause.message : "Не вдалося завантажити заявки."); }
+      return false;
     } finally { if (request === current.current && !next.signal.aborted) setLoading(false); }
   }, [token, logout, path]);
   useEffect(() => { void load(); return () => { current.current++; controller.current?.abort(); }; }, [load]);
-  return { orders, setOrders, loading, error, forbidden, load };
+  const invalidate = () => { current.current++; controller.current?.abort(); setLoading(false); };
+  return { orders, setOrders, loading, error, forbidden, load, invalidate };
 }
 function OrderDetails({ order }: { order: MasterOrder }) {
   return <>
@@ -39,6 +42,7 @@ function OrderDetails({ order }: { order: MasterOrder }) {
     <p className="order-description">{order.description}</p>
     <p className="order-meta">{order.city} · {categories[order.category]}</p>
     <p className="order-meta">{order.budget === null ? "Бюджет не вказано" : `${order.budget} грн`}</p>
+    {order.status === "COMPLETED" && order.completedAt && <p className="order-meta">Завершено: <time dateTime={order.completedAt}>{new Date(order.completedAt).toLocaleString("uk-UA")}</time></p>}
   </>;
 }
 function OfferForm({ order, onCreated, onConflict }: { order: MasterOrder; onCreated: (response: NonNullable<MasterOrder["myResponse"]>) => void; onConflict: () => Promise<void> }) {
@@ -73,13 +77,61 @@ function OfferForm({ order, onCreated, onConflict }: { order: MasterOrder; onCre
   </form>;
 }
 export function AssignedOrders() {
-  const { orders, loading, error, forbidden, load } = useMasterOrders("assigned");
+  const { orders, setOrders, loading, error, forbidden, load, invalidate } = useMasterOrders("assigned");
+  const { token, logout } = useAuth();
+  const [pending, setPending] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<Set<string>>(new Set());
+  const [uncertain, setUncertain] = useState<Set<string>>(new Set());
+  const [mutationError, setMutationError] = useState("");
+  const [notice, setNotice] = useState("");
+  const inFlight = useRef(false);
+  const active = useRef(true);
+  useEffect(() => { active.current = true; return () => { active.current = false; }; }, []);
+  async function refresh() {
+    if (await load() && active.current) setUncertain(new Set());
+  }
+  async function transition(order: MasterOrder, status: "IN_PROGRESS" | "COMPLETED") {
+    if (inFlight.current || loading || error || blocked.has(order.id) || uncertain.has(order.id)) return;
+    inFlight.current = true; setPending(order.id); setMutationError(""); setNotice("");
+    try {
+      const data = await api<{ order: MasterOrder }>(`/master/orders/${order.id}/status`, {
+        method: "PATCH", token: token!, body: { status },
+      });
+      if (!active.current) return;
+      invalidate();
+      setOrders((rows) => rows.map((row) => row.id === order.id ? data.order : row));
+      setNotice(status === "IN_PROGRESS" ? "Роботу розпочато." : "Роботу завершено.");
+    } catch (cause) {
+      if (!active.current) return;
+      if (cause instanceof ApiError && cause.status === 401) logout(true);
+      else {
+        setMutationError(cause instanceof Error ? cause.message : "Не вдалося змінити статус.");
+        if (cause instanceof ApiError && cause.status === 403) setBlocked((ids) => new Set(ids).add(order.id));
+        else {
+          // A lost response may follow a committed PATCH. Reconcile before retry.
+          setUncertain((ids) => new Set(ids).add(order.id));
+          if (await load() && active.current) setUncertain((ids) => { const next = new Set(ids); next.delete(order.id); return next; });
+        }
+      }
+    } finally { inFlight.current = false; if (active.current) setPending(null); }
+  }
   return <section className="assigned-orders" aria-label="Призначені заявки">
-    <div className="orders-list-heading"><h2>Призначені мені заявки</h2><button className="secondary-button" disabled={loading || forbidden} onClick={() => void load()}>Оновити призначення</button></div>
+    <div className="orders-list-heading"><h2>Призначені мені заявки</h2><button className="secondary-button" disabled={loading || forbidden || pending !== null} onClick={() => void refresh()}>Оновити призначення</button></div>
     {loading && <p role="status">Завантажуємо призначення…</p>}
     {error && <p role="alert" className="notice error">{error}</p>}
+    {mutationError && <p role="alert" className="notice error">{mutationError}</p>}
+    {notice && <p role="status" className="notice">{notice}</p>}
     {!loading && !error && orders.length === 0 && <p>Призначених заявок поки немає.</p>}
-    {!forbidden && orders.map((order) => <article className="profile-card order-card" key={order.id} aria-label={order.title}><OrderDetails order={order} /></article>)}
+    {!forbidden && orders.map((order) => <article className="profile-card order-card" key={order.id} aria-label={order.title}>
+      <OrderDetails order={order} />
+      {blocked.has(order.id) && <p className="notice error">Немає дозволу змінювати цю заявку.</p>}
+      {uncertain.has(order.id) && <p className="notice">Оновіть призначення перед повторною дією.</p>}
+      {order.type === "CUSTOM" && ["ACCEPTED", "IN_PROGRESS"].includes(order.status) && <button className="secondary-button"
+        disabled={loading || !!error || pending !== null || blocked.has(order.id) || uncertain.has(order.id)}
+        onClick={() => void transition(order, order.status === "ACCEPTED" ? "IN_PROGRESS" : "COMPLETED")}>
+        {pending === order.id ? "Зберігаємо…" : order.status === "ACCEPTED" ? "Розпочати роботу" : "Завершити роботу"}
+      </button>}
+    </article>)}
   </section>;
 }
 export function MasterOrdersPage() {

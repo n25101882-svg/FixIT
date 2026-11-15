@@ -13,7 +13,8 @@ export default defineConfig({
   timeout: 30000,
   reporter: [
     ["list"],
-    ["json", { outputFile: process.argv.includes("--grep-invert") ? "test-results/e2e-regression-results.json" : "test-results/e2e-results.json" }],
+    ["json", { outputFile: process.argv.includes("--grep-invert") ? "test-results/e2e-regression-results.json"
+      : process.argv.includes("@lifecycle") ? "test-results/e2e-lifecycle-results.json" : "test-results/e2e-results.json" }],
   ],
   use: {
     baseURL: frontend,

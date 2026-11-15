@@ -19,6 +19,7 @@ export interface Order {
   assignedMaster?: PublicMaster | null;
   updatedAt?: string;
   statusHistory?: { status: string }[];
+  completedAt?: string | null;
 }
 function newest(incoming: Order, current?: Order): Order {
   if (current && ((current.statusHistory?.length ?? 0) > (incoming.statusHistory?.length ?? 0)
@@ -203,6 +204,7 @@ export function OrdersPage() {
                   <p className="order-meta">{order.city} · {categories[order.category]}</p>
                   <p className="order-meta">{order.budget === null ? "Бюджет не вказано" : `${order.budget.replace(".", ",")} грн`}</p>
                   {order.assignedMaster && <p className="notice">Виконавець: {order.assignedMaster.name}</p>}
+                  {order.status === "COMPLETED" && order.completedAt && <p className="order-meta">Завершено: <time dateTime={order.completedAt}>{new Date(order.completedAt).toLocaleString("uk-UA")}</time></p>}
                   {order.type === "CUSTOM" && <ClientOffers order={order} onOrderChange={updateFromOffers} />}
                   <div className="order-card-footer">
                     <time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString("uk-UA")}</time>

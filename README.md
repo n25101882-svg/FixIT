@@ -12,6 +12,7 @@ Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React +
 - React `/register`, `/login`, protected `/dashboard`, повідомлення про помилки і logout. MASTER-поля показуються лише для MASTER; CLIENT їх не надсилає. Token лише в пам’яті; refresh потребує повторного входу.
 - Захищені CLIENT GET/POST `/api/v1/orders`, DELETE `/api/v1/orders/:id`: власний список, CUSTOM OPEN, логічне CANCELLED через наявний сервіс; скасовані записи/історія збережені. React `/orders` відкривається з кабінету, оновлює список без reload і показує Loading/Empty/Error/Success.
 - US-06/US-07: MASTER `/master/orders` показує OPEN CUSTOM за профільним містом/категорією і приймає текстову пропозицію; CLIENT `/orders` читає свої пропозиції й обирає одного виконавця. Кабінет MASTER показує призначені CUSTOM та поточні статуси, включно з кінцевими. [API, перевірки та Windows QA](docs/US_06_07.md).
+- US-08 (CUSTOM, FIX-8) / частина US-09 (FIX-9): призначений MASTER починає та завершує роботу з кабінету через PATCH `/api/v1/master/orders/:id/status`. CLIENT після «Оновити» бачить «У роботі» / «Завершена»; скасування після початку заборонене сервером. Дата завершення — з реальної DB-події, без нової колонки. [Звіт і Windows QA](docs/US_08.md).
 - `/health`, `/health/ready` та чинна транзакційна логіка `src/orders/service.ts` збережені. Каталог, Reviews, ADMIN UI, платежі та чат не додаються.
 
 ## Windows / PowerShell
@@ -141,6 +142,14 @@ Vitest і @vitest/coverage-v8 мають сумісну exact-версію **5.1
 
 Гілка `feature/us-06-07-master-offers` від develop після PR #5. Власник CLIENT відкриває «Переглянути пропозиції» у /orders і обирає майстра. MASTER переходить із кабінету до «Заявки для майстра», надсилає одну текстову пропозицію; призначену заявку бачить у /dashboard. «Оновити» перечитує стан з API; realtime/pagination не додаються.
 
-`npm run test:e2e` послідовно запускає попередню регресію та нові `@offers` сценарії з окремими процесами серверів. Це ізолює synthetic auth traffic і лічильник штатного rate limiter, без зміни auth-конфігурації. Обидва запуски обов’язкові, JSON-звіти окремі в ігнорованому test-results/. Cloud helper поточного запуску: `source /workspace/.fixit-dev/offers-env.sh` (приватний, поза Git), БД `fixit_offers_test`. На Windows налаштуйте свою локальну *_test БД за інструкцією вище.
+`npm run test:e2e` послідовно запускає попередню регресію, `@offers` та `@lifecycle` сценарії з окремими процесами серверів. Це ізолює synthetic auth traffic і лічильник штатного rate limiter, без зміни auth-конфігурації. Усі три запуски обов’язкові, JSON-звіти окремі в ігнорованому test-results/. Для US-06/07 застосовувався приватний offers-env.sh, БД fixit_offers_test; поточний US-08 helper описано нижче. На Windows налаштуйте свою локальну *_test БД за інструкцією вище.
 
 Повний звіт із фактичними перевірками, обмеженнями й командами — [docs/US_06_07.md](docs/US_06_07.md). Звіти попередніх практичних не переписуються.
+
+## US-08 — виконання CUSTOM-замовлення
+
+База develop після PR #6 (`0467d996`), гілка `feature/us-08-order-lifecycle`. У MASTER кабінеті: «Розпочати роботу» для ACCEPTED, «Завершити роботу» для IN_PROGRESS, завершений стан/відома дата без дій для COMPLETED. PATCH делегує незмінному `transition()`, DB triggers ведуть історію. На 409 або втрату відповіді клієнт перечитує призначення; після невдалого GET повторна дія заблокована до синхронізації. 401 завершує сесію, 403 блокує повторну мутацію картки.
+
+Фактично: **295 backend / 121 frontend / 22 browser E2E**, попередні 244/99/19 збережені. Typecheck, frontend build та coverage gate пройшли. Cloud перевірка використовує окрему нову `fixit_lifecycle_test`, helper `source /workspace/.fixit-dev/lifecycle-env.sh` поза Git. Схема, DBML, три міграції й JWT незмінні; fixit_dev не використовується.
+
+**US-08 реалізовано для CUSTOM. Повне закриття FIX-8 залежить від US-04:** backend підтримує PENDING → ACCEPTED/DECLINED, але публічного STANDARD flow/екранів тут немає. Частина FIX-9 — актуальні стани/дата в історії CLIENT після ручного оновлення, без нового timeline. FIX-17 не виправлявся. API-контракт, точні перевірки, змінені файли й ручний Windows сценарій — [docs/US_08.md](docs/US_08.md).
