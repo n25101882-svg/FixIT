@@ -27,7 +27,12 @@
     "frontend:test": "npm run test --workspace @fixit/frontend",
     "test:e2e": "npm run build && playwright test --grep-invert \"@offers|@lifecycle|@catalog|@standard|@details\" && playwright test --grep @offers && playwright test --grep @lifecycle && playwright test --grep @catalog && playwright test --grep @standard && playwright test --grep @details",
     "test:migrations": "npm run build && node scripts/verify-migrations.mjs",
-    "frontend:coverage": "npm run coverage --workspace @fixit/frontend"
+    "frontend:coverage": "npm run coverage --workspace @fixit/frontend",
+    "deploy:validate": "node scripts/check-render-blueprint.mjs",
+    "deploy:build:api": "npm run db:generate && npm run build",
+    "deploy:build:frontend": "node scripts/check-deploy-env.mjs frontend && npm run frontend:build",
+    "deploy:start": "node scripts/check-deploy-env.mjs api && npm run db:migrate && npm start",
+    "release:verify": "npm run build && node scripts/check-release-test-env.mjs && npm run deploy:validate && npm run db:generate && npm run db:validate && npm run er:validate && npm run db:migrate && npm run db:status && npm run db:check && npm run typecheck && npm test && npm run frontend:test && npm run frontend:build && npm run frontend:coverage && npm run test:e2e"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

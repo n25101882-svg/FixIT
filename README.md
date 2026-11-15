@@ -18,6 +18,12 @@ Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React +
 
 ## Windows / PowerShell
 
+Для підготовки релізу після PR #10 див. [Render deployment/rollback](docs/DEPLOYMENT_RENDER.md), [release checklist та ST1–ST5](docs/RELEASE_CHECKLIST.md), [фактичні результати й security findings](docs/RELEASE_PREPARATION.md), [порожній шаблон практичної №11](docs/PRACTICAL_11_RESULTS_TEMPLATE.md).
+
+`npm run release:verify` відтворює локальні перевірки лише на явно налаштованій окремій loopback *_test БД, відмовляється від fixit_test/fixit_shadow та не запускає cloud deployment. `npm run deploy:validate` перевіряє локальні інваріанти render.yaml (JSON-синтаксис YAML), а не live Render schema. Blueprint використовує free/default-free плани, вимкнений autodeploy, private DB binding, generated JWT secret та SPA rewrite; actual domains задаються вручну. Не застосовуйте Blueprint без окремого схвалення — initial Apply може одразу створити ресурси й почати deploy.
+
+Feature Freeze/release/v1.0.0 очікують FIX-17 decision, QA й review відомого idempotency-ризику. Production-only npm audit: 0; full tree: 19 dev advisories, які також лишаються на хості через Prisma CLI-at-start. Залежності/покриття не знижено; PostgreSQL schema, migrations, JWT і бізнес-модулі не змінено.
+
 Потрібні Git, Node 24/npm 11, PostgreSQL 18 і psql у PATH. Використовуйте окремі локальні *_test БД; fixit_dev/production не використовувати для тестів/seed. Жодного Docker/WSL/домашньої мережі для Cloud не потрібно.
 
 Через власного локального адміністратора (`psql -h 127.0.0.1 -U postgres -d postgres`) створіть **лише відсутні** роль і тестові БД. Якщо роль/БД уже існують, не видаляйте й не перевизначайте пароль автоматично.

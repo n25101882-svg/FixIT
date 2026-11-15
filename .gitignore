@@ -325,8 +325,6 @@ node_modules/
 *.dsp
 
 # Visual Studio 6 technical files
-*.ncb
-*.aps
 
 # Visual Studio LightSwitch build output
 **/*.HTMLClient/GeneratedArtifacts
@@ -428,7 +426,6 @@ FodyWeavers.xsd
 #*.lscache
 
 # FixIT: Node/TypeScript and local configuration
-node_modules/
 dist/
 coverage/
 src/generated/
@@ -439,5 +436,11 @@ src/generated/
 .DS_Store
 test-results/
 playwright-report/
-test-results/
-playwright-report/
+
+# Private operational credentials and database backups
+.pgpass
+pgpass.conf
+backups/
+secrets/
+*.dump
+*.backup

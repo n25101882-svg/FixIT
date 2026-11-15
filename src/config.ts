@@ -50,10 +50,14 @@ export function loadConfig() {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error("PORT must be an integer between 1 and 65535.");
   }
+  const proxy = process.env.TRUST_PROXY_HOPS ?? "0";
+  if (proxy !== "0" && proxy !== "1")
+    throw new Error("TRUST_PROXY_HOPS must be 0 (direct) or 1 (one trusted ingress).");
   return {
     databaseUrl: requireDatabaseUrl(),
     host: process.env.HOST ?? "127.0.0.1",
     port,
+    trustProxyHops: proxy === "1" ? 1 as const : 0 as const,
     ...loadAuthConfig(),
   };
 }

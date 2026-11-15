@@ -8,9 +8,12 @@ import { servicesRouter } from "./services/router.js";
 export function createApp(
   checkDatabase: () => Promise<void>,
   auth?: AuthOptions,
+  http: { trustProxyHops?: 0 | 1 } = {},
 ) {
   const app = express();
   app.disable("x-powered-by");
+  // Opt-in, bounded ingress trust; local development continues to trust none.
+  app.set("trust proxy", http.trustProxyHops === 1 ? 1 : false);
 
   if (auth) {
     app.use(
