@@ -8,5 +8,18 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.ts"],
     clearMocks: true,
     restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/orders.tsx", "src/CancelOrderDialog.tsx"],
+      reporter: ["text", "html", "json", "json-summary"],
+      reportsDirectory: "./coverage",
+      thresholds: {
+        perFile: true,
+        statements: 71,
+        branches: 71,
+        functions: 71,
+        lines: 71,
+      },
+    },
   },
 });
