@@ -65,7 +65,17 @@ describe("real PostgreSQL migrations, seeding and relations", () => {
 
   test("seed contains synthetic clients, masters and role-linked order/service chains", async () => {
     const users = await database.user.findMany({
-      where: { email: { endsWith: "@fixit.test" } },
+      where: {
+        id: {
+          in: [
+            seedIds.admin,
+            seedIds.clientA,
+            seedIds.clientB,
+            seedIds.masterA,
+            seedIds.masterB,
+          ],
+        },
+      },
     });
     expect(users).toHaveLength(5);
     expect(users.filter((u) => u.role === "CLIENT")).toHaveLength(2);
