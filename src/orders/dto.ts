@@ -36,7 +36,9 @@ export function masterOrder(order: Order) {
   // The MASTER feed/assignments never expose client identity or audit actor IDs.
   return { id: order.id, type: order.type, status: order.status, title: order.title,
     description: order.description, city: order.city, category: order.category,
-    budget: order.budget?.toFixed(2) ?? null, createdAt: order.createdAt, updatedAt: order.updatedAt, completedAt: completedAt(order) };
+    budget: order.budget?.toFixed(2) ?? null, serviceId: order.serviceId,
+    priceAtOrder: order.priceAtOrder?.toFixed(2) ?? null,
+    createdAt: order.createdAt, updatedAt: order.updatedAt, completedAt: completedAt(order) };
 }
 export function publicResponse(response: {
   id: string; orderId: string; message: string; createdAt: Date;

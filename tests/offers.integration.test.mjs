@@ -97,7 +97,8 @@ describe("server-filtered MASTER feed and transactional response eligibility", (
     if (status === "DECLINED") await commands.transition(a.id, { orderId: order.id, status });
     expect((await feed()).body.orders.some((r) => r.id === order.id)).toBe(false);
     await offer(a, order.id).expect(409); await responses(client, order.id).expect(400);
-    expect((await assigned()).body.orders.some((r) => r.id === order.id)).toBe(false);
+    expect((await assigned()).body.orders.find((r) => r.id === order.id)).toMatchObject({ type: "STANDARD", status });
+    expect((await assigned(b)).body.orders.some((r) => r.id === order.id)).toBe(false);
   });
   test.each(["city", "category"])("direct POST cannot bypass the %s filter and creates nothing", async (field) => {
     const order = await create(); const actor = field === "city" ? otherCity : otherCategory;

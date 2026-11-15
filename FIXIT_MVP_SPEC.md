@@ -132,7 +132,7 @@ CLIENT у власній історії після «Оновити» бачит
 
 DTO додають nullable completedAt: ISO-дата реальної COMPLETED-події statusHistory з source=database. Для legacy_migration/невідомого часу — null, без підміни createdAt/updatedAt або часу міграції. Нових колонок немає. MASTER не отримує raw statusHistory/actorUserId чи приватні поля користувачів.
 
-Сумісність STANDARD PENDING → ACCEPTED/DECLINED перевірена через той самий PATCH на синтетичних integration fixtures, без публічної US-04. MASTER assigned list/UI як і раніше зосереджені на CUSTOM; повне US-08/FIX-8 залежить від реалізації US-04. FIX-9 покрито частково (актуальний стан/відома дата), не повний timeline. [Звіт US-08](docs/US_08.md); FIX-17, Prisma/DBML, три міграції та JWT-архітектура незмінні.
+Сумісність STANDARD PENDING → ACCEPTED/DECLINED перевірена через той самий PATCH на синтетичних integration fixtures, без публічної US-04. На етапі PR #7 assigned list/UI були CUSTOM-only; US-04 нижче додає STANDARD і завершує цю частину US-08/FIX-8. FIX-9 покрито частково (актуальний стан/відома дата), не повний timeline. [Звіт US-08](docs/US_08.md); FIX-17, Prisma/DBML, три міграції та JWT-архітектура незмінні.
 
 ## US-02 / US-03: профіль, послуги та публічний каталог
 
@@ -142,4 +142,18 @@ Public GET /api/v1/catalog/services фільтрує isActive=true на серв
 
 Гість і CLIENT знаходять активні послуги через основну публічну /catalog; public /masters/:id та URL-фільтри працюють після F5 без входу. MASTER /master/services має форми, field errors, збереження вводу після помилок і локальне оновлення без F5. Порожня priceEstimate → NULL, не нуль; гроші — exact decimal string. Категорія профілю не переписує категорії послуг. Profile FOR UPDATE / Service FOR UPDATE узгоджені з чинними SHARE locks читання в orders service; історичні snapshots/історія замовлень незмінні. Нова city/category застосовується до майбутньої CUSTOM аудиторії.
 
-«Замовити послугу» підготовлено як disabled із serviceId на картці та чесним поясненням майбутньої доступності. Немає STANDARD API/UI створення, нових таблиць/міграцій, chat/ratings/photos/payments/ADMIN UI чи виправлення FIX-17. Контракти, фактичні результати й обмеження — [US_02_03.md](docs/US_02_03.md).
+На етапі PR #8 «Замовити послугу» було підготовлено як disabled; US-04 нижче активує його. Нових таблиць/міграцій, chat/ratings/photos/payments/ADMIN UI чи виправлення FIX-17 немає. Контракти, фактичні результати й обмеження — [US_02_03.md](docs/US_02_03.md).
+
+## US-04 / US-08: STANDARD замовлення та спільна історія
+
+Публічні картки передають Service.id у захищений /orders/new/standard/:serviceId. Guest login/register зберігають тільки allowlisted STANDARD UUID returnTo; зовнішні URLs, інші paths, query/hash/traversal не приймаються. CLIENT отримує GET /api/v1/orders/standard/:id (active service/public master/preview fingerprint), описує проблему, явно підтверджує місто надання послуги. Order.city лишається snapshot MasterProfile.city; району/адреси як нових колонок немає. Район можна вказати в приватному описі проблеми.
+
+POST /api/v1/orders/standard: strict serviceId UUID, description trim 1–4000, optional expectedSnapshot SHA-256 hex. 201 `{order}` тільки після commit. Сервер derive-ить clientId з JWT, masterProfileId із Service, type=STANDARD/status=PENDING та title/category/city/priceAtOrder із locked rows. Внутрішній optional masterProfileId у createStandard() збережено лише як assertion сумісності старих callers/tests, не як джерело призначення; зовнішній body забороняє це поле.
+
+Єдиний createStandard(): actor CLIENT → owner lookup → Profile SHARE → Service SHARE → reread/active/owner/optional fingerprint guard → create. Locks утримуються до commit й узгоджені з CRUD. Fingerprint перевіряє serviceId, owner profile, title, Service.category, profile city та exact/null price. Невідповідність/неактивність → 409 без Order; відсутній Service → 404. Мінімальний API request serviceId/description приймається для сумісності, UI завжди надсилає expectedSnapshot. Preview читається RepeatableRead. Hash — optimistic check публічних даних, не authorization token.
+
+Форма блокує повторні кліки; 400 лишає текст/field errors, 409 refresh-ить preview й скидає city acknowledgement. Неоднозначні 5xx/network/нечитабельна success-відповідь не дають фальшивий success чи automatic POST: inline GET власної історії й окремий checkbox дозволяють свідомий ручний повтор. Без server idempotency-key exactly-once не гарантується; FIX-17/in-memory draft не змінюються.
+
+listAssigned() тепер повертає всі Orders поточного MasterProfile без type-фільтра. STANDARD PENDING має ACCEPTED/DECLINED дії; ACCEPTED/IN_PROGRESS обох типів — початок/завершення. Вся матриця й ownership залишаються в незмінному transition() та SQL triggers. Shared CLIENT history показує тип, історичні title/city/category/price, executor/current public name, created/completed дату/статус. PENDING/ACCEPTED можна логічно скасувати; IN_PROGRESS/COMPLETED/DECLINED/CANCELLED — ні. Ні скасовані, ні відхилені записи не видаляються.
+
+[Фактичні результати й контракти](docs/US_04_STANDARD.md), [Windows QA / status_history](docs/WINDOWS_STANDARD_QA.md). Schema/DBML/три міграції, JWT/CORS/rate limits, CUSTOM offers/selection/lifecycle та services/catalog збережені.

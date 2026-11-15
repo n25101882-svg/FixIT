@@ -39,7 +39,7 @@ test.describe("@catalog real MASTER services and public discovery", () => {
       await page.goto("/catalog"); await page.getByRole("textbox", { name: "Пошук послуг", exact: true }).fill(title); await page.getByLabel("Місто", { exact: true }).fill(city);
       await page.getByLabel("Категорія", { exact: true }).selectOption("PLUMBING"); await page.getByRole("button", { name: "Знайти послуги" }).click();
       const guestCard = page.getByRole("article", { name: title, exact: true }); await expect(guestCard).toBeVisible(); await expect(guestCard.getByText("1500,25 грн")).toBeVisible();
-      await expect(guestCard.getByRole("button", { name: "Замовити послугу" })).toBeDisabled(); const catalogURL = page.url();
+      await expect(guestCard.getByRole("button", { name: "Замовити послугу" })).toBeEnabled(); const catalogURL = page.url();
       await guestCard.getByRole("link", { name: /Майстер:/ }).click(); await expect(page).toHaveURL(new RegExp(`/masters/${profileId}$`)); await expect(page.getByText("Synthetic public profile")).toBeVisible();
       await page.reload(); await expect(page.getByRole("article", { name: title, exact: true })).toBeVisible(); // Public F5, no login.
       const hidden = masterPage.waitForResponse((r) => r.url().endsWith(`/master/services/${service.id}`) && r.request().method() === "PATCH");

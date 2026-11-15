@@ -1,6 +1,6 @@
 # FixIT — Hybrid MVP, послуги та публічний каталог
 
-Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Поточна база US-02/US-03 — develop після PR #7 (`f409416`). Збережені Hybrid database, Auth, CUSTOM orders, пропозиції/вибір виконавця та виконання робіт. Новий модуль додає керування послугами MASTER і публічний пошук із PostgreSQL.
+Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Поточна база STANDARD — develop після PR #8 (`ad6357a`). Збережені Hybrid database, Auth, CUSTOM orders, пропозиції/вибір виконавця та виконання робіт. Після керування послугами й публічного каталогу додано повний STANDARD flow: замовлення CLIENT, рішення MASTER та виконання робіт.
 
 П’ять таблиць: users, master_profiles, services, orders, order_responses. Усі три застосовані SQL-міграції з develop збережені без змін. Грошові поля — decimal(10,2), зокрема nullable Service.priceEstimate (`price_estimate`); Float не використовується. [Специфікація](FIXIT_MVP_SPEC.md), [фізична DBML](docs/er-diagram.dbml), [звіт №6](docs/PRACTICAL_6.md), [звіт №7](docs/PRACTICAL_7.md), [звіт №9 і Windows/Network/PostgreSQL QA](docs/PRACTICAL_9.md).
 
@@ -134,7 +134,7 @@ PR #4 review / FIX-18: перед DELETE є клавіатурний діало�
 
 ## Практична №10 — Unit Code Coverage
 
-Vitest і @vitest/coverage-v8 мають сумісну exact-версію **5.1.0**. З кореня репозиторію: `npm ci`, потім **`npm run frontend:coverage`**. Базові модулі №10 — повні orders.tsx і CancelOrderDialog.tsx; US-02/03 також додають catalog.tsx і master-services.tsx до вимірювання. Per-file gate — 71% для Statements/Branches/Functions/Lines. HTML — frontend/coverage/index.html (PowerShell: `Start-Process .\frontend\coverage\index.html`), JSON і assets поряд; generated coverage ігнорується Git. Unit coverage не потребує PostgreSQL/JWT_SECRET.
+Vitest і @vitest/coverage-v8 мають сумісну exact-версію **5.1.0**. З кореня репозиторію: `npm ci`, потім **`npm run frontend:coverage`**. Базові модулі №10 — повні orders.tsx і CancelOrderDialog.tsx; US-02/03 додають catalog.tsx і master-services.tsx; STANDARD також охоплює standard-order.tsx, standard-return.ts і master-orders.tsx. Per-file gate — 71% для Statements/Branches/Functions/Lines. HTML — frontend/coverage/index.html (PowerShell: `Start-Process .\frontend\coverage\index.html`), JSON і assets поряд; generated coverage ігнорується Git. Unit coverage не потребує PostgreSQL/JWT_SECRET.
 
 У перевірці №10: **198 backend / 60 frontend / 15 E2E**, старі 48 frontend-сценаріїв збережені, додано 12 ізольованих AAA cases. orders.tsx: **96.49 / 88.69 / 100 / 100%**, CancelOrderDialog.tsx: **96.77 / 95.65 / 100 / 100%** у порядку Statements / Branches / Functions / Lines. FIX-18 регресійно підтверджено; FIX-17 не виправлявся. [Звіт №10, точні counts і Windows QA](docs/PRACTICAL_10.md). Попередні навчальні звіти не змінені.
 
@@ -142,7 +142,7 @@ Vitest і @vitest/coverage-v8 мають сумісну exact-версію **5.1
 
 Гілка `feature/us-06-07-master-offers` від develop після PR #5. Власник CLIENT відкриває «Переглянути пропозиції» у /orders і обирає майстра. MASTER переходить із кабінету до «Заявки для майстра», надсилає одну текстову пропозицію; призначену заявку бачить у /dashboard. «Оновити» перечитує стан з API; realtime/pagination не додаються.
 
-`npm run test:e2e` послідовно запускає попередню регресію, `@offers`, `@lifecycle` та `@catalog` сценарії з окремими процесами серверів. Це ізолює synthetic auth traffic і лічильник штатного rate limiter, без зміни auth-конфігурації. Усі чотири запуски обов’язкові, JSON-звіти окремі в ігнорованому test-results/. Для US-06/07 застосовувався приватний offers-env.sh, БД fixit_offers_test; поточний US-08 helper описано нижче. На Windows налаштуйте свою локальну *_test БД за інструкцією вище.
+`npm run test:e2e` послідовно запускає попередню регресію, `@offers`, `@lifecycle`, `@catalog` та `@standard` сценарії з окремими процесами серверів. Це ізолює synthetic auth traffic і лічильник штатного rate limiter, без зміни auth-конфігурації. Усі п’ять запусків обов’язкові, JSON-звіти окремі в ігнорованому test-results/. Для US-06/07 застосовувався приватний offers-env.sh, БД fixit_offers_test; поточний US-08 helper описано нижче. На Windows налаштуйте свою локальну *_test БД за інструкцією вище.
 
 Повний звіт із фактичними перевірками, обмеженнями й командами — [docs/US_06_07.md](docs/US_06_07.md). Звіти попередніх практичних не переписуються.
 
@@ -152,7 +152,7 @@ Vitest і @vitest/coverage-v8 мають сумісну exact-версію **5.1
 
 Фактично: **295 backend / 121 frontend / 22 browser E2E**, попередні 244/99/19 збережені. Typecheck, frontend build та coverage gate пройшли. Cloud перевірка використовує окрему нову `fixit_lifecycle_test`, helper `source /workspace/.fixit-dev/lifecycle-env.sh` поза Git. Схема, DBML, три міграції й JWT незмінні; fixit_dev не використовується.
 
-**US-08 реалізовано для CUSTOM. Повне закриття FIX-8 залежить від US-04:** backend підтримує PENDING → ACCEPTED/DECLINED, але публічного STANDARD flow/екранів тут немає. Частина FIX-9 — актуальні стани/дата в історії CLIENT після ручного оновлення, без нового timeline. FIX-17 не виправлявся. API-контракт, точні перевірки, змінені файли й ручний Windows сценарій — [docs/US_08.md](docs/US_08.md).
+**Етап PR #7 реалізував US-08 для CUSTOM. STANDARD частину завершено нижче в US-04:** спільний backend/UI підтримує PENDING → ACCEPTED/DECLINED та подальше виконання. Частина FIX-9 — актуальні стани/дата в історії CLIENT після ручного оновлення, без нового timeline. FIX-17 не виправлявся. API-контракт, точні перевірки, змінені файли й ручний Windows сценарій — [docs/US_08.md](docs/US_08.md).
 
 ## US-02 / US-03 — профіль, послуги й каталог
 
@@ -160,8 +160,20 @@ Vitest і @vitest/coverage-v8 мають сумісну exact-версію **5.1
 
 MASTER у кабінеті відкриває «Профіль і послуги» (`/master/services`): редагує city/category/description профілю, створює/редагує послуги та перемикає isActive. Name/email/password/role/isApproved не редагуються. Основна категорія профілю й категорії послуг незалежні. Немає фізичного DELETE. Nullable priceEstimate зберігається як Decimal(10,2); порожня ціна лишається NULL. Поля зберігаються після помилки; неоднозначний результат мутації потребує GET перед ручним повтором.
 
-Дія «Замовити послугу» **disabled** і показує майбутню доступність: US-04 та STANDARD orders не реалізовані. CUSTOM/пропозиції/lifecycle й FIX-17 незмінні. isApproved залишається internal legacy, не новий approval gate каталогу. Зміни профілю впливають на нову CUSTOM аудиторію, без переписування Order snapshots.
+На етапі PR #8 дія «Замовити послугу» була disabled; тепер її активовано сценарієм STANDARD, описаним нижче. CUSTOM/пропозиції/lifecycle й FIX-17 незмінні. isApproved залишається internal legacy, не новий approval gate каталогу. Зміни профілю впливають на нову CUSTOM аудиторію, без переписування Order snapshots.
 
 Перевірено **376 backend / 151 frontend / 25 browser E2E**, збережено всі попередні 295/121/22. Coverage тепер охоплює чотири повні модулі без зниження 71% gate; результати по кожному й загальні — [docs/US_02_03.md](docs/US_02_03.md). Cloud helper поточної перевірки: `source /workspace/.fixit-dev/catalog-env.sh`, окрема loopback fixit_catalog_test. Helper та секрети поза Git; інша машина налаштовує свої test bindings.
 
 Повні API-контракти, змінені файли, перевірки й Windows 11 QA — [звіт US-02/03](docs/US_02_03.md). Попередні звіти практичних не переписані.
+
+## US-04 / US-08 — STANDARD на готову послугу
+
+«Замовити послугу» у /catalog і /masters/:id веде до `/orders/new/standard/:serviceId`. Гість входить через безпечний returnTo (тільки цей маршрут з UUID), CLIENT бачить актуальні дані/місто й підтверджує місто перед POST. JWT лишається в пам’яті; returnTo не містить token/особистих даних. MASTER не має CLIENT-доступу до форми/API.
+
+GET `/api/v1/orders/standard/:id` дає CLIENT preview та snapshot fingerprint. POST `/api/v1/orders/standard` приймає serviceId/description та optional expectedSnapshot; masterProfileId/clientId/price/status задаються сервером. createStandard() бере Profile → Service SHARE locks у транзакції й копіює цілісний snapshot; знімок, переглянутий UI, перевіряється під цими ж locks. На зміну ціни/міста — 409, новий GET та повторне підтвердження, без втрати опису. На неоднозначну помилку POST не повторюється автоматично: є inline перевірка власної історії та явне підтвердження ручного повтору.
+
+MASTER бачить CUSTOM і свої STANDARD; для STANDARD PENDING є «Прийняти»/«Відхилити», потім «Розпочати»/«Завершити» через чинний transition(). CLIENT у спільній /orders бачить тип, виконавця, snapshot міста/назви/категорії/ціни, дату й статус; nullable ціна не стає нулем. Скасування PENDING/ACCEPTED логічне, після початку/terminal станів сервер відмовляє. Історія й відхилені/скасовані записи зберігаються.
+
+Фактично **428 backend / 205 frontend / 29 E2E**, попередні 376/151/25 cases збережені (старі disabled/CUSTOM-only очікування адаптовано до нового STANDARD). Typecheck/build/coverage/Prisma/DBML checks пройдено. Окрема loopback fixit_standard_test, приватний `source /workspace/.fixit-dev/standard-env.sh` поза Git. П’ять моделей, три міграції, JWT/CORS/rate limits, CUSTOM і service CRUD/catalog збережені.
+
+[API, locks, перевірки, файли й залишкові ризики](docs/US_04_STANDARD.md) · [Окремий Windows 11 QA checklist та status_history SQL](docs/WINDOWS_STANDARD_QA.md). FIX-17 лишається; server POST idempotency key та повний timeline не додані. Звіти попередніх етапів не переписані.

@@ -7,6 +7,8 @@ import { categories, statuses, type Order } from "./orders";
 interface MasterOrder extends Order {
   myResponse?: { id: string; message: string; createdAt: string } | null;
 }
+type ExecutionStatus = "ACCEPTED" | "DECLINED" | "IN_PROGRESS" | "COMPLETED";
+const actionLabels: Record<ExecutionStatus, string> = { ACCEPTED: "Прийняти", DECLINED: "Відхилити", IN_PROGRESS: "Розпочати роботу", COMPLETED: "Завершити роботу" };
 function useMasterOrders(path: "available" | "assigned") {
   const { token, logout } = useAuth();
   const [orders, setOrders] = useState<MasterOrder[]>([]);
@@ -41,7 +43,8 @@ function OrderDetails({ order }: { order: MasterOrder }) {
     <div className="order-card-heading"><h3>{order.title}</h3><span className={`order-status status-${order.status.toLowerCase()}`}>{statuses[order.status]}</span></div>
     <p className="order-description">{order.description}</p>
     <p className="order-meta">{order.city} · {categories[order.category]}</p>
-    <p className="order-meta">{order.budget === null ? "Бюджет не вказано" : `${order.budget} грн`}</p>
+    <p className="order-meta">{order.type === "STANDARD" ? "Замовлення послуги" : "Індивідуальна заявка"}</p>
+    <p className="order-meta">{order.type === "STANDARD" ? order.priceAtOrder == null ? "Ціна за домовленістю" : `Ціна на момент замовлення: ${order.priceAtOrder} грн` : order.budget === null ? "Бюджет не вказано" : `${order.budget} грн`}</p>
     {order.status === "COMPLETED" && order.completedAt && <p className="order-meta">Завершено: <time dateTime={order.completedAt}>{new Date(order.completedAt).toLocaleString("uk-UA")}</time></p>}
   </>;
 }
@@ -80,6 +83,7 @@ export function AssignedOrders() {
   const { orders, setOrders, loading, error, forbidden, load, invalidate } = useMasterOrders("assigned");
   const { token, logout } = useAuth();
   const [pending, setPending] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<ExecutionStatus | null>(null);
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [uncertain, setUncertain] = useState<Set<string>>(new Set());
   const [mutationError, setMutationError] = useState("");
@@ -90,9 +94,9 @@ export function AssignedOrders() {
   async function refresh() {
     if (await load() && active.current) setUncertain(new Set());
   }
-  async function transition(order: MasterOrder, status: "IN_PROGRESS" | "COMPLETED") {
+  async function transition(order: MasterOrder, status: ExecutionStatus) {
     if (inFlight.current || loading || error || blocked.has(order.id) || uncertain.has(order.id)) return;
-    inFlight.current = true; setPending(order.id); setMutationError(""); setNotice("");
+    inFlight.current = true; setPending(order.id); setPendingAction(status); setMutationError(""); setNotice("");
     try {
       const data = await api<{ order: MasterOrder }>(`/master/orders/${order.id}/status`, {
         method: "PATCH", token: token!, body: { status },
@@ -100,7 +104,7 @@ export function AssignedOrders() {
       if (!active.current) return;
       invalidate();
       setOrders((rows) => rows.map((row) => row.id === order.id ? data.order : row));
-      setNotice(status === "IN_PROGRESS" ? "Роботу розпочато." : "Роботу завершено.");
+      setNotice(({ ACCEPTED: "Замовлення прийнято.", DECLINED: "Замовлення відхилено.", IN_PROGRESS: "Роботу розпочато.", COMPLETED: "Роботу завершено." })[status]);
     } catch (cause) {
       if (!active.current) return;
       if (cause instanceof ApiError && cause.status === 401) logout(true);
@@ -113,7 +117,7 @@ export function AssignedOrders() {
           if (await load() && active.current) setUncertain((ids) => { const next = new Set(ids); next.delete(order.id); return next; });
         }
       }
-    } finally { inFlight.current = false; if (active.current) setPending(null); }
+    } finally { inFlight.current = false; if (active.current) { setPending(null); setPendingAction(null); } }
   }
   return <section className="assigned-orders" aria-label="Призначені заявки">
     <div className="orders-list-heading"><h2>Призначені мені заявки</h2><button className="secondary-button" disabled={loading || forbidden || pending !== null} onClick={() => void refresh()}>Оновити призначення</button></div>
@@ -126,11 +130,12 @@ export function AssignedOrders() {
       <OrderDetails order={order} />
       {blocked.has(order.id) && <p className="notice error">Немає дозволу змінювати цю заявку.</p>}
       {uncertain.has(order.id) && <p className="notice">Оновіть призначення перед повторною дією.</p>}
-      {order.type === "CUSTOM" && ["ACCEPTED", "IN_PROGRESS"].includes(order.status) && <button className="secondary-button"
+      {((order.type === "STANDARD" && order.status === "PENDING" ? ["ACCEPTED", "DECLINED"]
+        : order.status === "ACCEPTED" ? ["IN_PROGRESS"] : order.status === "IN_PROGRESS" ? ["COMPLETED"] : []) as ExecutionStatus[]).map((status) => <button key={status} className="secondary-button"
         disabled={loading || !!error || pending !== null || blocked.has(order.id) || uncertain.has(order.id)}
-        onClick={() => void transition(order, order.status === "ACCEPTED" ? "IN_PROGRESS" : "COMPLETED")}>
-        {pending === order.id ? "Зберігаємо…" : order.status === "ACCEPTED" ? "Розпочати роботу" : "Завершити роботу"}
-      </button>}
+        onClick={() => void transition(order, status)}>
+        {pending === order.id && pendingAction === status ? "Зберігаємо…" : actionLabels[status]}
+      </button>)}
     </article>)}
   </section>;
 }

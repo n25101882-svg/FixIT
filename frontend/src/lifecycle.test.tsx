@@ -48,9 +48,12 @@ test.each(["COMPLETED", "CANCELLED", "DECLINED", "OPEN"])("CUSTOM %s has no exec
   setup([{ ...order, status }]); show(); await screen.findByRole("article", { name: order.title });
   expect(screen.queryByRole("button", { name: /Розпочати роботу|Завершити роботу/ })).not.toBeInTheDocument();
 });
-test.each(["PENDING", "ACCEPTED"])("future STANDARD %s does not gain a premature execution UI", async (status) => {
+test.each(["PENDING", "ACCEPTED"])("STANDARD %s exposes only the current lifecycle actions", async (status) => {
   setup([{ ...order, type: "STANDARD", status }]); show(); await screen.findByRole("article", { name: order.title });
-  expect(screen.queryByRole("button", { name: /Розпочати роботу|Завершити роботу/ })).not.toBeInTheDocument();
+  const card = screen.getByRole("article", { name: order.title });
+  const labels = status === "PENDING" ? ["Прийняти", "Відхилити"] : ["Розпочати роботу"];
+  for (const name of labels) expect(within(card).getByRole("button", { name })).toBeEnabled();
+  expect(within(card).getAllByRole("button")).toHaveLength(labels.length);
 });
 test("unknown legacy completion date is not replaced by createdAt/current time", async () => {
   setup([{ ...completed, completedAt: null }]); show(); await screen.findByText("Завершена");

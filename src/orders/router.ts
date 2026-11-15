@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Category, OrderStatus, type Order } from "../generated/prisma/client.js";
+import { Category, OrderStatus, Prisma, type Order } from "../generated/prisma/client.js";
 import type { AuthOptions } from "../auth/router.js";
 import { authenticate } from "../auth/token.js";
 import { HttpError } from "../http-error.js";
 import { createOrderService, OrderError } from "./service.js";
-import { masterOrder, publicMasterSelect, publicOrder, publicResponse } from "./dto.js";
+import { masterOrder, publicMaster, publicMasterSelect, publicOrder, publicResponse } from "./dto.js";
+import { standardSnapshot } from "./standard-snapshot.js";
+import { serviceDTO, serviceSelect } from "../services/service.js";
 
 const customBody = z.object({
   title: z.string().trim().min(1).max(160),
@@ -26,6 +28,8 @@ const fieldMessages: Record<string, string> = {
   responseId: "Некоректний ідентифікатор пропозиції.",
   message: "Пропозиція має містити від 1 до 2000 символів.",
   status: "Оберіть коректний статус замовлення.",
+  serviceId: "Оберіть послугу з коректним ідентифікатором.",
+  expectedSnapshot: "Оновіть дані послуги перед підтвердженням.",
 };
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -115,6 +119,28 @@ export function ordersRouter(options: AuthOptions) {
       include: { masterProfile: { select: publicMasterSelect } },
     });
     response.json({ orders: rows.map(publicOrder) });
+  });
+  router.get("/orders/standard/:id", async (request, response) => {
+    const { id } = parse(orderId, request.params); parse(empty, request.query);
+    const service = await options.database.$transaction((tx) => tx.service.findFirst({ where: { id, isActive: true },
+      select: { ...serviceSelect, masterProfileId: true, masterProfile: { select: publicMasterSelect } } }), { isolationLevel: "RepeatableRead" });
+    if (!service) throw new HttpError(404, "NOT_FOUND", "Послуга недоступна. Оберіть іншу в каталозі.");
+    response.json({ service: { ...serviceDTO(service), master: publicMaster(service.masterProfile) }, snapshot: standardSnapshot(service) });
+  });
+  router.post("/orders/standard", async (request, response) => {
+    parse(empty, request.query);
+    const input = parse(z.object({ serviceId: z.uuid(), description: z.string().trim().min(1).max(4000),
+      expectedSnapshot: z.string().regex(/^[0-9a-f]{64}$/).optional() }).strict(), request.body);
+    try {
+      const order = await orders.createStandard(response.locals.userId as string, input);
+      response.status(201).json({ order: await orderWithMaster(order) });
+    } catch (error) {
+      if ((error instanceof OrderError && ["INVALID_INPUT", "CONFLICT"].includes(error.code))
+        || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034"))
+        throw new HttpError(409, "SERVICE_CHANGED", "Послуга змінилася або недоступна. Оновіть дані й підтвердьте їх ще раз.");
+      if (error instanceof OrderError && error.code === "NOT_FOUND") throw new HttpError(404, "NOT_FOUND", "Послугу не знайдено.");
+      rethrowOrderError(error, "замовлення послуги");
+    }
   });
   router.get("/orders/:id/responses", async (request, response) => {
     const { id } = parse(orderId, request.params); parse(empty, request.query);

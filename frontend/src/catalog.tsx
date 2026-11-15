@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { categories } from "./orders";
 import type { PublicMaster } from "./ClientOffers";
@@ -26,13 +26,13 @@ function Pagination({ data, loading, onPage }: { data: Page; loading: boolean; o
   </nav>;
 }
 function ServiceCard({ service, master }: { service: Service; master: PublicMaster }) {
+  const navigate = useNavigate();
   return <article className="profile-card service-card" aria-label={service.title}>
     <p className="eyebrow">{categories[service.category]}</p><h2>{service.title}</h2>
     <Link className="nav-link" to={`/masters/${master.id}`}>Майстер: {master.name}</Link>
     <p className="order-meta">{master.city}</p><p className="service-excerpt">{service.description || "Опис послуги не вказано."}</p>
     <p className="service-price">{service.priceEstimate === null ? "Ціна за домовленістю" : `${service.priceEstimate.replace(".", ",")} грн`}</p>
-    <button className="secondary-button" disabled data-service-id={service.id} aria-describedby={`future-${service.id}`}>Замовити послугу</button>
-    <p className="order-meta" id={`future-${service.id}`}>Онлайн-замовлення послуг буде доступне згодом.</p>
+    <button className="secondary-button" data-service-id={service.id} onClick={() => navigate(`/orders/new/standard/${service.id}`)}>Замовити послугу</button>
   </article>;
 }
 export function CatalogPage() {
