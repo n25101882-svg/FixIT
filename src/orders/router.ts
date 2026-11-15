@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { Category, type Order } from "../generated/prisma/client.js";
+import { Category, OrderStatus, type Order } from "../generated/prisma/client.js";
 import type { AuthOptions } from "../auth/router.js";
 import { authenticate } from "../auth/token.js";
 import { HttpError } from "../http-error.js";
@@ -25,6 +25,7 @@ const fieldMessages: Record<string, string> = {
   id: "Некоректний ідентифікатор заявки.",
   responseId: "Некоректний ідентифікатор пропозиції.",
   message: "Пропозиція має містити від 1 до 2000 символів.",
+  status: "Оберіть коректний статус замовлення.",
 };
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -77,6 +78,15 @@ export function ordersRouter(options: AuthOptions) {
     parse(empty, request.query);
     try { response.json({ orders: (await orders.listAssigned(response.locals.userId as string)).map(masterOrder) }); }
     catch (error) { rethrowOrderError(error, "перегляд призначень"); }
+  });
+  router.patch("/master/orders/:id/status", async (request, response) => {
+    const { id } = parse(orderId, request.params);
+    parse(empty, request.query);
+    const { status } = parse(z.object({ status: z.enum(OrderStatus) }).strict(), request.body);
+    try {
+      const order = await orders.transition(response.locals.userId as string, { orderId: id, status });
+      response.json({ order: masterOrder(order) });
+    } catch (error) { rethrowOrderError(error, "зміну статусу"); }
   });
   router.post("/master/orders/:id/responses", async (request, response) => {
     const { id } = parse(orderId, request.params);

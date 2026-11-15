@@ -45,7 +45,7 @@ const apiUrl = (
 export async function api<T>(
   path: string,
   options: {
-    method?: "GET" | "POST" | "DELETE";
+    method?: "GET" | "POST" | "PATCH" | "DELETE";
     body?: unknown;
     token?: string;
     signal?: AbortSignal;

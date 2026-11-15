@@ -121,3 +121,15 @@ CLIENT бачить публічні name, profile id, city, category, descripti
 React /orders завантажує пропозиції за запитом користувача, показує вибраного майстра та ACCEPTED без reload. На 409 автоматично повторює GET зі збереженням повідомлення; невдалий GET блокує застарілий вибір до retry. Версія стану (statusHistory/updatedAt) захищає від запізнілої відповіді GET після мутації. MASTER /dashboard має призначені CUSTOM-заявки (включно з кінцевими станами для історії), /master/orders — стрічку й текстову форму. Для нових пропозицій перевіряється поточний профіль; старі пропозиції лишаються доступними для вибору без міграції/перекласифікації.
 
 Результати, API та Windows QA — [US_06_07.md](docs/US_06_07.md). Схема, три SQL-міграції, JWT-архітектура незмінні; FIX-17 залишається відомим обмеженням.
+
+## US-08 (CUSTOM) / частина US-09: виконання роботи та історія
+
+PATCH /api/v1/master/orders/:id/status приймає strict `{status}` (чинний OrderStatus enum) і перевірений JWT. MASTER middleware читає поточну роль з БД, контролер викликає **незмінний transition()** як єдине джерело правил/належності/транзакцій. Призначений MASTER: ACCEPTED → IN_PROGRESS → COMPLETED; пропущений, повторний чи інший заборонений перехід → 409. Чужий MASTER і CLIENT → 403; невідома заявка для MASTER → 404. Identity з body/query заборонена. CORS дозволяє PATCH лише для чинних точних origins.
+
+MASTER /dashboard показує відповідну кнопку, блокує повторний запит під час PATCH, оновлює картку з безпечного DTO без reload. 409 та неоднозначні помилки PATCH (зокрема втрата відповіді після commit) запускають GET assigned; конфлікт/помилка зберігається окремо від помилки GET. До синхронізації застарілі дії недоступні. 401 → чинний logout; 403 блокує наступні мутації цієї картки. COMPLETED/CANCELLED/DECLINED не мають дій виконання.
+
+CLIENT у власній історії після «Оновити» бачить ACCEPTED/IN_PROGRESS/COMPLETED як «Прийнята»/«У роботі»/«Завершена». Після IN_PROGRESS скасування відсутнє у UI й відхиляється незмінним transition() з 409; завершені заявки та історія лишаються в БД/списку.
+
+DTO додають nullable completedAt: ISO-дата реальної COMPLETED-події statusHistory з source=database. Для legacy_migration/невідомого часу — null, без підміни createdAt/updatedAt або часу міграції. Нових колонок немає. MASTER не отримує raw statusHistory/actorUserId чи приватні поля користувачів.
+
+Сумісність STANDARD PENDING → ACCEPTED/DECLINED перевірена через той самий PATCH на синтетичних integration fixtures, без публічної US-04. MASTER assigned list/UI як і раніше зосереджені на CUSTOM; повне US-08/FIX-8 залежить від реалізації US-04. FIX-9 покрито частково (актуальний стан/відома дата), не повний timeline. [Звіт US-08](docs/US_08.md); FIX-17, Prisma/DBML, три міграції та JWT-архітектура незмінні.
