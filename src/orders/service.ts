@@ -50,7 +50,7 @@ async function lockedOrder(tx: Transaction, id: string) {
 }
 
 /** Internal server command layer. actorId must come from trusted authentication,
- * never a request-body user ID. This branch intentionally exposes no HTTP writes. */
+ * never a request-body user ID. HTTP controllers delegate mutations here. */
 export function createOrderService(database: PrismaClient) {
   return {
     createStandard(

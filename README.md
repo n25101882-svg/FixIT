@@ -1,8 +1,8 @@
-# FixIT — Hybrid MVP і Practical №7 Auth
+# FixIT — Hybrid MVP, Auth і CUSTOM-заявки
 
-Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Hybrid database PR #3 merged у develop (`f7d7684`); PR #2 додає Auth/app skeleton та атомарну реєстрацію MASTER поверх цієї бази.
+Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Hybrid database PR #3 і Auth PR #2 merged у develop (`e046255`). Практична №9 додає вертикальний CUSTOM orders flow React → JWT API → PostgreSQL → React.
 
-П’ять таблиць: users, master_profiles, services, orders, order_responses. Усі три застосовані SQL-міграції з develop збережені без змін. Грошові поля — decimal(10,2), зокрема nullable Service.priceEstimate (`price_estimate`); Float не використовується. [Специфікація](FIXIT_MVP_SPEC.md), [фізична DBML](docs/er-diagram.dbml), [звіт №6](docs/PRACTICAL_6.md), [звіт №7 і screenshot QA](docs/PRACTICAL_7.md).
+П’ять таблиць: users, master_profiles, services, orders, order_responses. Усі три застосовані SQL-міграції з develop збережені без змін. Грошові поля — decimal(10,2), зокрема nullable Service.priceEstimate (`price_estimate`); Float не використовується. [Специфікація](FIXIT_MVP_SPEC.md), [фізична DBML](docs/er-diagram.dbml), [звіт №6](docs/PRACTICAL_6.md), [звіт №7](docs/PRACTICAL_7.md), [звіт №9 і Windows/Network/PostgreSQL QA](docs/PRACTICAL_9.md).
 
 ## Що працює
 
@@ -10,7 +10,8 @@ Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React +
 - POST `/api/v1/auth/login`: salted scrypt password verification і короткоживучий HS256 JWT; secret тільки з environment.
 - GET `/api/v1/users/me`: JWT-захист, лише id/email/name/role; missing/invalid/expired → 401. Точні CORS origins, JSON size limit і auth rate limiting збережені.
 - React `/register`, `/login`, protected `/dashboard`, повідомлення про помилки і logout. MASTER-поля показуються лише для MASTER; CLIENT їх не надсилає. Token лише в пам’яті; refresh потребує повторного входу.
-- `/health`, `/health/ready` та внутрішній `src/orders/service.ts` збережені. Каталог/order routes, Reviews, ADMIN UI, платежі та чат не додаються.
+- Захищені CLIENT GET/POST `/api/v1/orders`, DELETE `/api/v1/orders/:id`: власний список, CUSTOM OPEN, логічне CANCELLED через наявний сервіс; скасовані записи/історія збережені. React `/orders` відкривається з кабінету, оновлює список без reload і показує Loading/Empty/Error/Success.
+- `/health`, `/health/ready` та `src/orders/service.ts` збережені. Каталог, API пропозицій/вибору майстра, Reviews, ADMIN UI, платежі та чат не додаються.
 
 ## Windows / PowerShell
 
@@ -22,18 +23,18 @@ Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React +
 -- Тільки якщо роль відсутня:
 CREATE ROLE fixit_test LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
 \password fixit_test
-CREATE DATABASE fixit_auth_hybrid_test OWNER fixit_test;
+CREATE DATABASE fixit_orders_test OWNER fixit_test;
 CREATE DATABASE fixit_shadow OWNER fixit_test;
 -- Дві окремі НОВІ ПОРОЖНІ *_test БД тільки для test:migrations:
-CREATE DATABASE fixit_auth_hybrid_clean_test OWNER fixit_test;
-CREATE DATABASE fixit_auth_hybrid_upgrade_test OWNER fixit_test;
+CREATE DATABASE fixit_orders_clean_test OWNER fixit_test;
+CREATE DATABASE fixit_orders_upgrade_test OWNER fixit_test;
 ```
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-У приватному .env задайте власний percent-encoded пароль локальної ролі, DATABASE_URL/TEST_DATABASE_URL для fixit_auth_hybrid_test, SHADOW_DATABASE_URL для окремої fixit_shadow. Схема — public. Для test:migrations задайте CLEAN_DATABASE_URL і UPGRADE_DATABASE_URL двох порожніх БД вище, відмінних від головної. Не публікуйте .env, паролі чи реальні URL.
+У приватному .env задайте власний percent-encoded пароль локальної ролі, DATABASE_URL/TEST_DATABASE_URL для fixit_orders_test, SHADOW_DATABASE_URL для окремої fixit_shadow. Схема — public. Для test:migrations задайте CLEAN_DATABASE_URL і UPGRADE_DATABASE_URL двох порожніх БД вище, відмінних від головної. Не публікуйте .env, паролі чи реальні URL.
 
 Згенеруйте випадковий JWT_SECRET локально і перенесіть значення **тільки** у приватний .env:
 
@@ -95,7 +96,7 @@ Cloud має власний локальний PostgreSQL кластер, нез
 ```bash
 cd /workspace/FixIT
 bash /workspace/.fixit-dev/bin/pg.sh start
-source /workspace/.fixit-dev/auth-hybrid-env.sh
+source /workspace/.fixit-dev/orders-env.sh
 unset PRISMA_SCHEMA_ENGINE_BINARY PRISMA_MIGRATION_ENGINE_BINARY
 npm ci
 npm run db:generate
@@ -111,7 +112,7 @@ npm run test:e2e
 npm run test:migrations
 ```
 
-auth-hybrid-env.sh — приватний helper цієї машини поза Git; задає окремі *_test БД на 127.0.0.1:55432 й установлену /usr/bin/chromium. На іншій машині налаштуйте власні дозволені TEST/DATABASE/SHADOW bindings та Chromium; автоматичного відновлення helper не заявляємо. У цьому helper немає production-секретів. Для ручного dev додатково задайте JWT_SECRET через захищене environment або приватний .env; E2E генерує власний випадковий secret.
+orders-env.sh — приватний helper цієї машини поза Git; використовує попередні приватні helpers і задає нові fixit_orders*_test БД на 127.0.0.1:55432 й установлену /usr/bin/chromium. На іншій машині налаштуйте власні дозволені TEST/DATABASE/SHADOW bindings та Chromium; автоматичного відновлення helper не заявляємо. У цьому helper немає production-секретів. Для ручного dev додатково задайте JWT_SECRET через захищене environment або приватний .env; E2E генерує власний випадковий secret.
 
 Prisma працює зі штатним engine, TLS/checksum verification не вимикаються, Rust compilation/override не потрібні. URL задається у prisma.config.ts. Для migrate dev потрібна окрема shadow database. Використовуйте migrate deploy, не db push/reset; для робочих даних потрібні окрема перевірка/backup. Backend startup не виконує seed/міграцій, перевіряє SQL-з’єднання перед listen; SIGINT/SIGTERM закриває пул.
 
@@ -119,8 +120,12 @@ Prisma працює зі штатним engine, TLS/checksum verification не �
 
 Спільні поля: name, email, password, **passwordConfirmation**, role CLIENT/MASTER (типово CLIENT). MASTER додатково: city, category (TECH_REPAIR/PLUMBING/ELECTRICAL/OTHER), profileDescription, serviceTitle, serviceDescription; optional priceEstimate, наприклад рядок `"250.50"`. Описи окремі, profile/first Service отримують одну category; ніяких placeholder. CLIENT MASTER-полів не надсилає. Межі/повні JSON/Postman приклади — у звіті №7.
 
-У Cloud фактично пройшли **145 backend тестів** (усі попередні **82 Hybrid** + **23 Auth** + **40 інтеграційних FIX-1**), **12 frontend тестів**, **5 browser E2E**. Перевірені rollback реальної помилки першої Service, duplicate/race email, валідація до запису, обидві ролі, JWT/CORS/rate limits, nullable exact prices і три міграції clean/legacy upgrade. Повний список команд і результатів — [PRACTICAL_7.md](docs/PRACTICAL_7.md).
+У Cloud фактично пройшли **198 backend тестів** (попередні **145** + **53 Orders API**), **48 frontend тестів** (усі попередні **27** + **21 review regression**), **15 browser E2E** (усі попередні **10** + **5 review regression**). Перевірені rollback реальної помилки першої Service, duplicate/race email, валідація до запису, обидві ролі, JWT/CORS/rate limits, nullable exact prices і три міграції clean/legacy upgrade. Повний список команд і результатів — [PRACTICAL_9.md](docs/PRACTICAL_9.md).
 
 Auth/browser тести створюють випадково іменовані синтетичні акаунти та видаляють тільки їхні Service → Profile → User, не обходячи RESTRICT FK. Hybrid concurrency-тест навмисно лишає одну власну синтетичну заявку/пропозиції на кожний прогін тільки в ізольованій *_test БД; інші мутації відкочуються. Seed fixtures: 5 users / 2 profiles / 3 services / 3 orders / 2 responses; global counts після concurrency можуть бути більшими. Seed-акаунти не мають відомого спільного пароля; для login створіть свій синтетичний account.
 
 Для №7 потрібні три **справжні** screenshots: Postman POST login 200 із замаскованим JWT, браузер /dashboard із synthetic email, backend terminal із database connected/listen. Покрокова інструкція — у [звіті №7](docs/PRACTICAL_7.md). Звітні screenshots, Windows чи Postman execution тут не вигадуються.
+
+Для №9 у браузері CLIENT відкрийте /dashboard → «Мої заявки», створіть CUSTOM із title/description/city/category і optional budget (точний рядок). Скасування — тільки до початку робіт, запис залишається у списку зі статусом «Скасована». Зміни з інших сесій видно після «Оновити»; GET без пагінації/query-фільтрів. Windows QA та три реальні докази (/orders, Network HTTP 200/201, PostgreSQL SELECT) описані у звіті №9; скріншоти/Windows execution тут не вигадуються.
+
+PR #4 review / FIX-18: перед DELETE є клавіатурний діалог з «Ні», Escape і закриттям без запиту; після 409 виконується автоматичний GET зі збереженням повідомлення про конфлікт. Помилка повторного GET має власний retry, застаріле скасування заблоковане. Форма лишається доступною під час loading/мережевих/5xx помилок історії; 401 завершує сесію, 403 блокує CLIENT-функції. FIX-17 (F5/session) не змінений. Фактичні перевірки від 15.11.2026 й межі — у review-розділі звіту №9.

@@ -11,6 +11,7 @@ import {
 import { api, ApiError, type LoginResponse, type RegistrationRequest, type ServiceCategory, type User } from "./api";
 import { useAuth } from "./auth";
 import "./styles.css";
+import { OrdersPage } from "./orders";
 
 const roles = { CLIENT: "Клієнт", MASTER: "Майстер", ADMIN: "Адміністратор" };
 const categories: Record<ServiceCategory, string> = {
@@ -517,9 +518,7 @@ function Dashboard() {
           </div>
         </div>
       )}
-      <p className="dashboard-note">
-        Ваш простір готовий. Інші можливості FixIT з’являться згодом.
-      </p>
+      {user?.role === "CLIENT" && <Link className="nav-button dashboard-orders-link" to="/orders">Мої заявки <ArrowIcon /></Link>}
     </section>
   );
 }
@@ -533,6 +532,7 @@ export function App() {
         <Route path="/register" element={<AuthPage mode="register" />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/orders" element={<OrdersPage />} />
         </Route>
         <Route
           path="*"
