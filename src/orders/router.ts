@@ -5,7 +5,7 @@ import type { AuthOptions } from "../auth/router.js";
 import { authenticate } from "../auth/token.js";
 import { HttpError } from "../http-error.js";
 import { createOrderService, OrderError } from "./service.js";
-import { masterOrder, publicMaster, publicMasterSelect, publicOrder, publicResponse } from "./dto.js";
+import { masterOrder, orderDetails, publicMaster, publicMasterSelect, publicOrder, publicResponse } from "./dto.js";
 import { standardSnapshot } from "./standard-snapshot.js";
 import { serviceDTO, serviceSelect } from "../services/service.js";
 
@@ -83,6 +83,17 @@ export function ordersRouter(options: AuthOptions) {
     try { response.json({ orders: (await orders.listAssigned(response.locals.userId as string)).map(masterOrder) }); }
     catch (error) { rethrowOrderError(error, "перегляд призначень"); }
   });
+  router.get("/master/orders/:id", async (request, response) => {
+    const { id } = parse(orderId, request.params); parse(empty, request.query);
+    // Ownership is part of the read, including the current account role. Never
+    // fetch an unrestricted order and only then check its private fields.
+    const order = await options.database.order.findFirst({
+      where: { id, masterProfile: { userId: response.locals.userId as string, user: { role: "MASTER" } } },
+      include: { masterProfile: { select: publicMasterSelect } },
+    });
+    if (!order) throw new HttpError(404, "NOT_FOUND", "Заявку не знайдено або вона недоступна.");
+    response.json({ order: orderDetails(order, "MASTER") });
+  });
   router.patch("/master/orders/:id/status", async (request, response) => {
     const { id } = parse(orderId, request.params);
     parse(empty, request.query);
@@ -148,6 +159,15 @@ export function ordersRouter(options: AuthOptions) {
       const order = await orders.listResponses(response.locals.userId as string, id);
       response.json({ order: publicOrder(order), responses: order.responses.map(publicResponse) });
     } catch (error) { rethrowOrderError(error, "перегляд пропозицій"); }
+  });
+  router.get("/orders/:id", async (request, response) => {
+    const { id } = parse(orderId, request.params); parse(empty, request.query);
+    const order = await options.database.order.findFirst({
+      where: { id, clientId: response.locals.userId as string, client: { role: "CLIENT" } },
+      include: { masterProfile: { select: publicMasterSelect } },
+    });
+    if (!order) throw new HttpError(404, "NOT_FOUND", "Заявку не знайдено або вона недоступна.");
+    response.json({ order: orderDetails(order, "CLIENT") });
   });
   router.post("/orders/:id/select-response", async (request, response) => {
     const { id } = parse(orderId, request.params);

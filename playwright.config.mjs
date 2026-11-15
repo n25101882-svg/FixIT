@@ -14,6 +14,7 @@ export default defineConfig({
   reporter: [
     ["list"],
     ["json", { outputFile: process.argv.includes("--grep-invert") ? "test-results/e2e-regression-results.json"
+      : process.argv.includes("@details") ? "test-results/e2e-details-results.json"
       : process.argv.includes("@standard") ? "test-results/e2e-standard-results.json"
       : process.argv.includes("@catalog") ? "test-results/e2e-catalog-results.json"
       : process.argv.includes("@lifecycle") ? "test-results/e2e-lifecycle-results.json" : "test-results/e2e-results.json" }],
