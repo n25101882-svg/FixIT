@@ -1,6 +1,6 @@
-# FixIT — Hybrid MVP, Auth і CUSTOM-заявки
+# FixIT — Hybrid MVP, Auth, CUSTOM-заявки та пропозиції майстрів
 
-Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Hybrid database PR #3 і Auth PR #2 merged у develop (`e046255`). Практична №9 додає вертикальний CUSTOM orders flow React → JWT API → PostgreSQL → React.
+Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Hybrid database PR #3 і Auth PR #2 merged у develop (`e046255`). Практична №9 додає вертикальний CUSTOM orders flow React → JWT API → PostgreSQL → React. US-06/US-07 продовжують його: пропозиції майстрів і атомарний вибір виконавця; база develop після PR #5 (`70617b9`).
 
 П’ять таблиць: users, master_profiles, services, orders, order_responses. Усі три застосовані SQL-міграції з develop збережені без змін. Грошові поля — decimal(10,2), зокрема nullable Service.priceEstimate (`price_estimate`); Float не використовується. [Специфікація](FIXIT_MVP_SPEC.md), [фізична DBML](docs/er-diagram.dbml), [звіт №6](docs/PRACTICAL_6.md), [звіт №7](docs/PRACTICAL_7.md), [звіт №9 і Windows/Network/PostgreSQL QA](docs/PRACTICAL_9.md).
 
@@ -11,7 +11,8 @@ Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React +
 - GET `/api/v1/users/me`: JWT-захист, лише id/email/name/role; missing/invalid/expired → 401. Точні CORS origins, JSON size limit і auth rate limiting збережені.
 - React `/register`, `/login`, protected `/dashboard`, повідомлення про помилки і logout. MASTER-поля показуються лише для MASTER; CLIENT їх не надсилає. Token лише в пам’яті; refresh потребує повторного входу.
 - Захищені CLIENT GET/POST `/api/v1/orders`, DELETE `/api/v1/orders/:id`: власний список, CUSTOM OPEN, логічне CANCELLED через наявний сервіс; скасовані записи/історія збережені. React `/orders` відкривається з кабінету, оновлює список без reload і показує Loading/Empty/Error/Success.
-- `/health`, `/health/ready` та `src/orders/service.ts` збережені. Каталог, API пропозицій/вибору майстра, Reviews, ADMIN UI, платежі та чат не додаються.
+- US-06/US-07: MASTER `/master/orders` показує OPEN CUSTOM за профільним містом/категорією і приймає текстову пропозицію; CLIENT `/orders` читає свої пропозиції й обирає одного виконавця. Кабінет MASTER показує призначені CUSTOM та поточні статуси, включно з кінцевими. [API, перевірки та Windows QA](docs/US_06_07.md).
+- `/health`, `/health/ready` та чинна транзакційна логіка `src/orders/service.ts` збережені. Каталог, Reviews, ADMIN UI, платежі та чат не додаються.
 
 ## Windows / PowerShell
 
@@ -122,7 +123,7 @@ Prisma працює зі штатним engine, TLS/checksum verification не �
 
 Для практичної №9 у Cloud фактично пройшли **198 backend тестів** (попередні **145** + **53 Orders API**), **48 frontend тестів** (усі попередні **27** + **21 review regression**), **15 browser E2E** (усі попередні **10** + **5 review regression**). Перевірені rollback реальної помилки першої Service, duplicate/race email, валідація до запису, обидві ролі, JWT/CORS/rate limits, nullable exact prices і три міграції clean/legacy upgrade. Повний список команд і результатів — [PRACTICAL_9.md](docs/PRACTICAL_9.md).
 
-Auth/browser тести створюють випадково іменовані синтетичні акаунти та видаляють тільки їхні Service → Profile → User, не обходячи RESTRICT FK. Hybrid concurrency-тест навмисно лишає одну власну синтетичну заявку/пропозиції на кожний прогін тільки в ізольованій *_test БД; інші мутації відкочуються. Seed fixtures: 5 users / 2 profiles / 3 services / 3 orders / 2 responses; global counts після concurrency можуть бути більшими. Seed-акаунти не мають відомого спільного пароля; для login створіть свій синтетичний account.
+Попередні Auth/browser тести створюють випадково іменовані синтетичні акаунти та видаляють тільки свої Service → Profile → User, не обходячи RESTRICT FK. Нові US-06/US-07 тести зберігають synthetic cohort і вибрані OrderResponse/історію в ізольованій *_test БД, оскільки SQL забороняє видаляти вибрану пропозицію. Hybrid concurrency-тест навмисно лишає одну власну синтетичну заявку/пропозиції на кожний прогін тільки в ізольованій *_test БД; інші мутації відкочуються. Seed fixtures: 5 users / 2 profiles / 3 services / 3 orders / 2 responses; global counts після concurrency можуть бути більшими. Seed-акаунти не мають відомого спільного пароля; для login створіть свій синтетичний account.
 
 Для №7 потрібні три **справжні** screenshots: Postman POST login 200 із замаскованим JWT, браузер /dashboard із synthetic email, backend terminal із database connected/listen. Покрокова інструкція — у [звіті №7](docs/PRACTICAL_7.md). Звітні screenshots, Windows чи Postman execution тут не вигадуються.
 
@@ -135,3 +136,11 @@ PR #4 review / FIX-18: перед DELETE є клавіатурний діало�
 Vitest і @vitest/coverage-v8 мають сумісну exact-версію **5.1.0**. З кореня репозиторію: `npm ci`, потім **`npm run frontend:coverage`**. Вимірюються повні orders.tsx і CancelOrderDialog.tsx; per-file gate — 71% для Statements/Branches/Functions/Lines. HTML — frontend/coverage/index.html (PowerShell: `Start-Process .\frontend\coverage\index.html`), JSON і assets поряд; generated coverage ігнорується Git. Unit coverage не потребує PostgreSQL/JWT_SECRET.
 
 У перевірці №10: **198 backend / 60 frontend / 15 E2E**, старі 48 frontend-сценаріїв збережені, додано 12 ізольованих AAA cases. orders.tsx: **96.49 / 88.69 / 100 / 100%**, CancelOrderDialog.tsx: **96.77 / 95.65 / 100 / 100%** у порядку Statements / Branches / Functions / Lines. FIX-18 регресійно підтверджено; FIX-17 не виправлявся. [Звіт №10, точні counts і Windows QA](docs/PRACTICAL_10.md). Попередні навчальні звіти не змінені.
+
+## US-06/US-07 — пропозиції майстрів
+
+Гілка `feature/us-06-07-master-offers` від develop після PR #5. Власник CLIENT відкриває «Переглянути пропозиції» у /orders і обирає майстра. MASTER переходить із кабінету до «Заявки для майстра», надсилає одну текстову пропозицію; призначену заявку бачить у /dashboard. «Оновити» перечитує стан з API; realtime/pagination не додаються.
+
+`npm run test:e2e` послідовно запускає попередню регресію та нові `@offers` сценарії з окремими процесами серверів. Це ізолює synthetic auth traffic і лічильник штатного rate limiter, без зміни auth-конфігурації. Обидва запуски обов’язкові, JSON-звіти окремі в ігнорованому test-results/. Cloud helper поточного запуску: `source /workspace/.fixit-dev/offers-env.sh` (приватний, поза Git), БД `fixit_offers_test`. На Windows налаштуйте свою локальну *_test БД за інструкцією вище.
+
+Повний звіт із фактичними перевірками, обмеженнями й командами — [docs/US_06_07.md](docs/US_06_07.md). Звіти попередніх практичних не переписуються.

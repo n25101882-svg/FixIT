@@ -1,6 +1,6 @@
 # FixIT — Hybrid MVP 1.0
 
-Практичні №6, №7, №9 розвивають наявну PostgreSQL 18 / Prisma 7.10.1 базу з п’ятьма сутностями. Це основа MVP, а не реалізація всього backlog. Initial `20261109200000_init_database_schema` і вже застосована Hybrid `20261114130000_hybrid_mvp` незмінні. Review-виправлення — наступна `20261114150000_review_snapshot_alignment`, без reset/db push. PR #3 вже merged у develop (`f7d7684`); Auth/React у PR #2 інтегровані з цією моделлю без нових змін схеми.
+Практичні №6, №7, №9, №10 та US-06/US-07 розвивають наявну PostgreSQL 18 / Prisma 7.10.1 базу з п’ятьма сутностями. Це основа MVP, а не реалізація всього backlog. Initial `20261109200000_init_database_schema` і вже застосована Hybrid `20261114130000_hybrid_mvp` незмінні. Review-виправлення — наступна `20261114150000_review_snapshot_alignment`, без reset/db push. PR #3 вже merged у develop (`f7d7684`); Auth/React у PR #2 інтегровані з цією моделлю без нових змін схеми.
 
 ## Межі й ролі
 
@@ -10,7 +10,7 @@
 - MASTER має власний профіль/послуги, подає одну пропозицію на OPEN CUSTOM; призначений майстер приймає/відхиляє STANDARD, починає та завершує роботу.
 - Auth/JWT/React та атомарна MASTER-реєстрація реалізовані в [PR #2](https://github.com/n25101882-svg/FixIT/pull/2). Backend має POST /api/v1/auth/register, POST /api/v1/auth/login, захищений GET /api/v1/users/me та /health і /health/ready. Практична №9 відкриває захищені CLIENT GET/POST /api/v1/orders і DELETE /api/v1/orders/:id поверх існуючого сервісу.
 
-`src/orders/service.ts` — внутрішні транзакційні команди. actorId у POST/DELETE order routes надходить лише з перевіреного JWT/current User, не з body; роль/належність повторно читаються з БД. Каталог, стрічка з фільтрами за містом/категорією та їхні екрани/API належать наступним задачам. Поточні екрани — /register, /login, захищені /dashboard і /orders. Із CLIENT-кабінету є перехід до власних заявок. Reviews, платежі, OAuth, Agreements і чат не додаються.
+`src/orders/service.ts` — внутрішні транзакційні команди. actorId у POST/DELETE order routes надходить лише з перевіреного JWT/current User, не з body; роль/належність повторно читаються з БД. US-06/US-07 додають серверну стрічку OPEN CUSTOM за містом/категорією профілю MASTER, текстові пропозиції та вибір виконавця. Каталог послуг лишається поза цим обсягом. Поточні екрани — /register, /login, захищені /dashboard, /orders і /master/orders. Із CLIENT-кабінету є перехід до власних заявок. Reviews, платежі, OAuth, Agreements і чат не додаються.
 
 ## Фізична модель
 
@@ -62,7 +62,7 @@ Legacy history — одне спостереження source=legacy_migration �
 
 STANDARD: serviceId/masterProfileId обов’язкові, budget=NULL, початковий PENDING. Складений FK гарантує належність послуги майстру. Сервер перевіряє CLIENT, активність послуги, бере shared lock і копіює title/city/category/priceEstimate. Невідома ціна дає NULL snapshot, не нуль. Подальша зміна послуги не змінює замовлення.
 
-CUSTOM: початковий OPEN, serviceId/masterProfileId/priceAtOrder=NULL; непорожні title/city/description, валідна category, необов’язковий budget. Один MASTER-профіль — одна immutable OrderResponse на OPEN CUSTOM; message обов’язкове, proposedPrice необов’язкове. Наразі перевіряються роль/власність/стан; фільтрація стрічки за містом/категорією з FR-07 ще не реалізована й має окремо перевірятися при підключенні API.
+CUSTOM: початковий OPEN, serviceId/masterProfileId/priceAtOrder=NULL; непорожні title/city/description, валідна category, необов’язковий budget. Один MASTER-профіль — одна immutable OrderResponse на OPEN CUSTOM; message обов’язкове, proposedPrice необов’язкове. US-06 перевіряє роль, OPEN CUSTOM, місто й категорію профілю MASTER як у стрічці, так і транзакційно у respond(). Місто порівнюється без урахування регістру, з буквальним екрануванням LIKE-символів; категорія — точний enum. Вже наявні історичні пропозиції не переписуються. Публічний POST приймає лише message (trim 1–2000), без ціни; proposedPrice збережено для сумісності старих даних/внутрішніх команд.
 
 CLIENT-власник обирає відповідь саме своєї заявки. FOR UPDATE і повторна перевірка OPEN/відсутності виконавця в одній транзакції встановлюють masterProfileId, priceAtOrder=proposedPrice (включно з NULL), ACCEPTED. Один конкурентний вибір commit, інший CONFLICT. SQL додатково перевіряє наявність пропозиції через NULL-safe порівняння ціни. Виконавця/ціну після вибору не перепризначити, вибрану пропозицію не видалити.
 
@@ -109,3 +109,15 @@ Missing/invalid/expired JWT або видалений User → 401; MASTER/ADMIN
 React /orders: Loading/Empty/Error/Success, форма CUSTOM, список власних замовлень, читабельні статуси, бюджет та скасування до початку робіт. POST/DELETE відповіді оновлюють локальний список без reload, скасована картка залишається; «Оновити» повторює GET. На 401 сесія очищується, на 403 форма не показується. Зміни з інших сесій потребують ручного GET/оновлення; autosave/real-time/pagination/full history timeline не додаються.
 
 Три SQL-міграції та Hybrid schema не змінені; нової таблиці Orders немає. Попередні 145 backend, 12 frontend і 5 Auth E2E збережені. Фактичні результати, Windows QA й інструкції справжніх /orders, Network 200/201 і PostgreSQL доказів — у [звіті №9](docs/PRACTICAL_9.md).
+
+## US-06/US-07: пропозиції та єдиний виконавець
+
+MASTER має окремі GET /api/v1/master/orders/available, GET /api/v1/master/orders/assigned і POST /api/v1/master/orders/:id/responses; вони не проходять CLIENT-only middleware /orders. Identity — тільки JWT sub, роль і профіль — поточні дані БД. Стрічка повертає OPEN CUSTOM у місті/категорії профілю, від нових до старих, та тільки власну myResponse. Прямий POST поза цим містом/категорією → 403; закрита/не-CUSTOM заявка чи дубль → 409.
+
+Лише CLIENT-власник читає GET /api/v1/orders/:id/responses і викликає POST /api/v1/orders/:id/select-response з єдиним responseId. Контролер делегує respond()/selectResponse(), не копіює транзакційну логіку. Незмінний selectResponse() блокує Order FOR UPDATE, перевіряє належність пропозиції та атомарно призначає майстра/ACCEPTED. Другий конкурентний вибір → 409 без другої події історії. Вибір відсутньої/чужої пропозиції → 404.
+
+CLIENT бачить публічні name, profile id, city, category, description майстра; email/passwordHash/userId/isApproved майстра не видаються. MASTER не отримує clientId, email, passwordHash чи audit actor IDs клієнта. Власний Order DTO CLIENT додатково містить assignedMaster; решта старого контракту збережена.
+
+React /orders завантажує пропозиції за запитом користувача, показує вибраного майстра та ACCEPTED без reload. На 409 автоматично повторює GET зі збереженням повідомлення; невдалий GET блокує застарілий вибір до retry. Версія стану (statusHistory/updatedAt) захищає від запізнілої відповіді GET після мутації. MASTER /dashboard має призначені CUSTOM-заявки (включно з кінцевими станами для історії), /master/orders — стрічку й текстову форму. Для нових пропозицій перевіряється поточний профіль; старі пропозиції лишаються доступними для вибору без міграції/перекласифікації.
+
+Результати, API та Windows QA — [US_06_07.md](docs/US_06_07.md). Схема, три SQL-міграції, JWT-архітектура незмінні; FIX-17 залишається відомим обмеженням.

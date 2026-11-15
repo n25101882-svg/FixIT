@@ -12,6 +12,7 @@ import { api, ApiError, type LoginResponse, type RegistrationRequest, type Servi
 import { useAuth } from "./auth";
 import "./styles.css";
 import { OrdersPage } from "./orders";
+import { AssignedOrders, MasterOrdersPage } from "./master-orders";
 
 const roles = { CLIENT: "Клієнт", MASTER: "Майстер", ADMIN: "Адміністратор" };
 const categories: Record<ServiceCategory, string> = {
@@ -519,6 +520,10 @@ function Dashboard() {
         </div>
       )}
       {user?.role === "CLIENT" && <Link className="nav-button dashboard-orders-link" to="/orders">Мої заявки <ArrowIcon /></Link>}
+      {user?.role === "MASTER" && <>
+        <Link className="nav-button dashboard-orders-link" to="/master/orders">Заявки для майстра <ArrowIcon /></Link>
+        <AssignedOrders />
+      </>}
     </section>
   );
 }
@@ -533,6 +538,7 @@ export function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/master/orders" element={<MasterOrdersPage />} />
         </Route>
         <Route
           path="*"

@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { api, ApiError, type ServiceCategory } from "./api";
 import { useAuth } from "./auth";
 import { CancelOrderDialog } from "./CancelOrderDialog";
+import { ClientOffers, type PublicMaster } from "./ClientOffers";
 
-interface Order {
+export interface Order {
   id: string;
   type: "CUSTOM" | "STANDARD";
   title: string;
@@ -14,11 +15,20 @@ interface Order {
   budget: string | null;
   status: "OPEN" | "PENDING" | "ACCEPTED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "DECLINED";
   createdAt: string;
+  masterProfileId?: string | null;
+  assignedMaster?: PublicMaster | null;
+  updatedAt?: string;
+  statusHistory?: { status: string }[];
 }
-const categories: Record<ServiceCategory, string> = {
+function newest(incoming: Order, current?: Order): Order {
+  if (current && ((current.statusHistory?.length ?? 0) > (incoming.statusHistory?.length ?? 0)
+    || (current.updatedAt && incoming.updatedAt && current.updatedAt > incoming.updatedAt))) return current;
+  return incoming;
+}
+export const categories: Record<ServiceCategory, string> = {
   TECH_REPAIR: "Ремонт техніки", PLUMBING: "Сантехніка", ELECTRICAL: "Електрика", OTHER: "Інше",
 };
-const statuses: Record<Order["status"], string> = {
+export const statuses: Record<Order["status"], string> = {
   OPEN: "Відкрита", PENDING: "Очікує відповіді", ACCEPTED: "Прийнята", IN_PROGRESS: "У роботі",
   COMPLETED: "Завершена", CANCELLED: "Скасована", DECLINED: "Відхилена",
 };
@@ -53,7 +63,8 @@ export function OrdersPage() {
     try {
       const data = await api<{ orders: Order[] }>("/orders", { token: token!, signal: controller.signal });
       if (request !== historyRequest.current || !active.current) return;
-      setOrders(data.orders); setLoaded(true); setHistoryStale(false); setForbidden(false);
+      setOrders((current) => data.orders.map((order) => newest(order, current.find((row) => row.id === order.id))));
+      setLoaded(true); setHistoryStale(false); setForbidden(false);
     } catch (cause) {
       if (controller.signal.aborted || request !== historyRequest.current || !active.current) return;
       if (cause instanceof ApiError && cause.status === 401) logout(true);
@@ -78,6 +89,11 @@ export function OrdersPage() {
     historyRequest.current++;
     historyController.current?.abort();
     setLoading(false);
+  }
+  function updateFromOffers(order: Order, selected = false) {
+    if (selected) invalidatePendingHistory();
+    setOrders((rows) => rows.map((row) => row.id === order.id ? newest(order, row) : row));
+    if (selected) setNotice("Виконавця обрано.");
   }
 
   function mutationError(cause: unknown) {
@@ -186,6 +202,8 @@ export function OrdersPage() {
                   <p className="order-description">{order.description}</p>
                   <p className="order-meta">{order.city} · {categories[order.category]}</p>
                   <p className="order-meta">{order.budget === null ? "Бюджет не вказано" : `${order.budget.replace(".", ",")} грн`}</p>
+                  {order.assignedMaster && <p className="notice">Виконавець: {order.assignedMaster.name}</p>}
+                  {order.type === "CUSTOM" && <ClientOffers order={order} onOrderChange={updateFromOffers} />}
                   <div className="order-card-footer">
                     <time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString("uk-UA")}</time>
                     {canCancel(order.status) && <button className="secondary-button" disabled={busy || loading || historyStale} onClick={() => setPendingCancel(order)}>{cancelling === order.id ? "Скасовуємо…" : "Скасувати заявку"}</button>}
