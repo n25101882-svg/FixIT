@@ -14,7 +14,7 @@ async function main() {
     const app = createApp(() => checkDatabase(database), {
       database,
       ...config,
-    });
+    }, { trustProxyHops: config.trustProxyHops });
     await new Promise<void>((resolve, reject) => {
       server = app.listen(config.port, config.host, (error?: Error) => {
         if (error) reject(error);
