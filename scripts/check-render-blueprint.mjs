@@ -14,6 +14,7 @@ export function validateBlueprint(blueprint) {
   assert.ok(api && web, "Both runtimes are required.");
   assert.equal(api.plan, "free"); assert.equal(db.plan, "free");
   assert.equal(web.plan, undefined); // Static hosting uses the free default.
+  assert.equal(typeof db.postgresMajorVersion, "string", "Render Blueprint requires postgresMajorVersion to be a string.");
   assert.equal(db.postgresMajorVersion, "18"); assert.deepEqual(db.ipAllowList, []);
   assert.equal(api.region, db.region); assert.equal(api.healthCheckPath, "/health/ready");
   assert.equal(api.buildCommand, "npm ci --include=dev && npm run deploy:build:api");

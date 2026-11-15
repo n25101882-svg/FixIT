@@ -113,6 +113,13 @@ describe("deployment preflight rejects unsafe configuration without logging valu
 describe("Render blueprint local safety invariants", () => {
   const blueprint = () => JSON.parse(readFileSync("render.yaml", "utf8"));
   test("free plans, explicit bindings, migration startup, SPA fallback and no autodeploy", () => { expect(() => validateBlueprint(blueprint())).not.toThrow(); });
+  test('PostgreSQL version is the Render-required string "18", never numeric 18', () => {
+    const data = blueprint();
+    expect(data.databases[0].postgresMajorVersion).toBe("18");
+    expect(() => validateBlueprint(data)).not.toThrow();
+    data.databases[0].postgresMajorVersion = 18;
+    expect(() => validateBlueprint(data)).toThrow("postgresMajorVersion to be a string");
+  });
   test.each(["paid-api", "paid-db", "paid-static", "auto-deploy", "pre-deploy", "public-db", "leaked-secret", "frontend-secret", "missing-spa", "wrong-pg", "duplicate-binding"])("unsafe Blueprint change %s fails locally", (kind) => {
     const data = blueprint(), api = data.services[0], web = data.services[1];
     if (kind === "paid-api") api.plan = "starter";
