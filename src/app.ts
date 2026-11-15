@@ -3,6 +3,7 @@ import cors from "cors";
 import { authRouter, type AuthOptions } from "./auth/router.js";
 import { HttpError } from "./http-error.js";
 import { ordersRouter } from "./orders/router.js";
+import { servicesRouter } from "./services/router.js";
 
 export function createApp(
   checkDatabase: () => Promise<void>,
@@ -40,6 +41,7 @@ export function createApp(
       express.json({ limit: "16kb" }),
       authRouter(auth),
       ordersRouter(auth),
+      servicesRouter(auth),
     );
   }
 

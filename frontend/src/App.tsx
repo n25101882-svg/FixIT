@@ -13,6 +13,8 @@ import { useAuth } from "./auth";
 import "./styles.css";
 import { OrdersPage } from "./orders";
 import { AssignedOrders, MasterOrdersPage } from "./master-orders";
+import { CatalogPage, PublicMasterPage } from "./catalog";
+import { MasterServicesPage } from "./master-services";
 
 const roles = { CLIENT: "Клієнт", MASTER: "Майстер", ADMIN: "Адміністратор" };
 const categories: Record<ServiceCategory, string> = {
@@ -43,7 +45,7 @@ function ArrowIcon() {
 
 function Brand() {
   return (
-    <Link to="/dashboard" className="brand" aria-label="FixIT — головна">
+    <Link to="/catalog" className="brand" aria-label="FixIT — головна">
       <span className="brand-mark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none">
           <path
@@ -69,8 +71,9 @@ function Layout() {
       <header className="site-header">
         <Brand />
         <nav aria-label="Головна навігація">
+          <Link className="nav-link" to="/catalog">Каталог</Link>
           {token ? (
-            <Link className="nav-link" to="/dashboard">
+            <Link className="nav-link account-link" to="/dashboard">
               Мій простір <ArrowIcon />
             </Link>
           ) : (
@@ -522,6 +525,7 @@ function Dashboard() {
       {user?.role === "CLIENT" && <Link className="nav-button dashboard-orders-link" to="/orders">Мої заявки <ArrowIcon /></Link>}
       {user?.role === "MASTER" && <>
         <Link className="nav-button dashboard-orders-link" to="/master/orders">Заявки для майстра <ArrowIcon /></Link>
+        <Link className="nav-button dashboard-orders-link" to="/master/services">Профіль і послуги <ArrowIcon /></Link>
         <AssignedOrders />
       </>}
     </section>
@@ -532,13 +536,16 @@ export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<Navigate to="/catalog" replace />} />
+        <Route path="/catalog" element={<CatalogPage />} />
+        <Route path="/masters/:id" element={<PublicMasterPage />} />
         <Route path="/login" element={<AuthPage mode="login" />} />
         <Route path="/register" element={<AuthPage mode="register" />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/master/orders" element={<MasterOrdersPage />} />
+          <Route path="/master/services" element={<MasterServicesPage />} />
         </Route>
         <Route
           path="*"

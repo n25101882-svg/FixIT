@@ -10,7 +10,7 @@ export default defineConfig({
     restoreMocks: true,
     coverage: {
       provider: "v8",
-      include: ["src/orders.tsx", "src/CancelOrderDialog.tsx"],
+      include: ["src/orders.tsx", "src/CancelOrderDialog.tsx", "src/catalog.tsx", "src/master-services.tsx"],
       reporter: ["text", "html", "json", "json-summary"],
       reportsDirectory: "./coverage",
       thresholds: {
