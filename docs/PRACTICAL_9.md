@@ -1,6 +1,6 @@
 # Практична №9 — CUSTOM orders: React → JWT API → PostgreSQL → React
 
-Перевірено **14.11.2026 у Codex Cloud**. Гілка `feature/practical-09-orders` створена від актуальної develop `e04625567adb72e619f5e5a4592c754b694a586b`, яка містить merged PR #2 (Auth) і #3 (Hybrid). Результат — мінімальний повний вертикальний сценарій власних CUSTOM-заявок. PR направляється в develop, без автоматичного merge.
+Початкова реалізація перевірена **14.11.2026 у Codex Cloud**; review-виправлення й нові регресійні тести — **15.11.2026** (Europe/Kyiv). Гілка `feature/practical-09-orders` створена від актуальної develop `e04625567adb72e619f5e5a4592c754b694a586b`, яка містить merged PR #2 (Auth) і #3 (Hybrid). Результат — мінімальний повний вертикальний сценарій власних CUSTOM-заявок. PR направляється в develop, без автоматичного merge.
 
 ## Реалізація
 
@@ -78,11 +78,11 @@ UUID параметр, body не потрібний (порожній об’є�
 
 /orders — у наявному ProtectedRoute; гість → /login. Початковий GET показує Loading, `[]` — Empty, помилки — Error із retry. GET 403 приховує CLIENT-форму; 401 очищує сесію й повертає login. Форми мають required/maxLength/pattern, accessible labels/field errors, заблоковані кнопки під час запиту.
 
-Після POST/DELETE список змінюється з **повернутого committed запису**: нова заявка зверху, після CANCELLED картка залишається без кнопки скасування. Success/error не підміняють реальний результат. Поля форми скидаються тільки після успішного POST; invalid/network error зберігає введені дані. «Оновити» повторює GET без browser reload і прибирає старі notices/errors; на конфлікті можна прочитати актуальний стан.
+Після POST/DELETE список змінюється з **повернутого committed запису**: нова заявка зверху, після CANCELLED картка залишається без кнопки скасування. Success/error не підміняють реальний результат. Поля форми скидаються тільки після успішного POST; invalid/network error зберігає введені дані. «Оновити» повторює GET без browser reload. Після 409 GET виконується автоматично, повідомлення про конфлікт зберігається; збій читання історії показується окремо з retry. Стара картка не дозволяє повторне скасування до успішної синхронізації. Форма не залежить від loading/мережевих/5xx помилок історії; лише 401/403 обмежують сесію/доступ.
 
 Тексти статусів читабельні українською, budget відображається з точного рядка. Скасування у UI доступне лише до початку роботи; backend завжди є авторитетним. Історія повністю зберігається у БД/API, окремий timeline UI не додавався.
 
-## Фактичні перевірки
+## Початкові перевірки — 14.11.2026
 
 Середовище: Node **24.22.1**, npm **11.9.0**, Prisma **7.10.1**, TypeScript **5.9.3**, PostgreSQL **18.6**, Chromium **156.0.8078.79**. Нові окремі loopback БД `fixit_orders_test`, `fixit_orders_clean_test`, `fixit_orders_upgrade_test`, окрема shadow. `fixit_dev`, production, домашні Windows/WSL/БД/мережа не використовувались. Reset/db push не виконувались; TLS/checksum validation не вимикались.
 
@@ -180,3 +180,37 @@ WHERE o.id = '<UUID_ІЗ_ВАШОЇ_РЕАЛЬНОЇ_HTTP_ВІДПОВІДІ>'::
 - Немає idempotency key для POST: кожний окремий успішний запит створює нову заявку; UI блокує повторну кнопку під час запиту. Повторний DELETE повертає 409 без нової події.
 - In-memory token/refresh/logout і single-process Auth limiter залишені з №7; немає refresh/revocation. Orders endpoints не додають окремої квоти. Зовнішнє розгортання не виконувалось.
 - Windows, ручні screenshots/Network/pgAdmin/Postman і CI не виконувалися в цій Linux-сесії. Автоматичні Chromium E2E — реальні; інструкції ручних доказів наведені чесно. PR не merge-иться автоматично.
+
+## Review PR #4 — 15.11.2026, FIX-18
+
+Виправлені всі три inline-зауваження в тій самій feature-гілці, окремим `fix:`-комітом із FIX-18. Нового PR немає. Схема Prisma/3 SQL-міграції, JWT/Auth architecture, backend та бізнес-правила src/orders/service.ts не змінені. FIX-17 (втрата in-memory сесії після F5) залишається окремою задачею, без localStorage/refresh token змін.
+
+| Review | Виправлення та перевірки |
+| --- | --- |
+| REVIEW-01 | Native dialog із назвою/описом, safe default «Ні», явним Tab/Shift+Tab focus trap, Escape, кнопкою закриття й поверненням фокусу. «Ні»/закриття/Escape не запускають DELETE/GET; лише підтвердження запускає один DELETE. Unit-тести й справжній Chromium keyboard/HTTP-count/DB-history тест. Guard close events зберігає діалог у React StrictMode. |
+| REVIEW-02 | Єдина loadOrders-функція автоматично виконує GET після 409. Конфлікт зберігається окремо від помилки GET, retry не стирає його; stale cancel action вимкнений до успішного читання. Unit-тести для CANCELLED/IN_PROGRESS, pending GET, HTTP 500/network, retry, 401/403; browser — реальне конкурентне скасування з PostgreSQL та контрольована 503 помилка GET. |
+| REVIEW-03 / FIX-18 | Loading/помилка історії відокремлені від форми. Поля не перемонтовуються на retry; можна створити заявку при pending/500/503/network GET. 401 logout і 403 block збережені, у тому числі для POST/повторного GET. Версія/abort запиту не дозволяє пізньому старому GET затерти нову заявку або зняти блокування після 403. Unit- і browser-тести з реальними POST 201/SQL-записами. |
+
+Форма використовує наявну автентифіковану сесію; успіх завантаження історії не є умовою її доступності. Явний 403 блокує форму й дії зі списком, сервер і надалі перевіряє CLIENT роль кожного запиту. Додаткових role claims чи змін AuthContext/JWT не внесено.
+
+**Фактичний фінальний результат:**
+
+| Команда | Результат |
+| --- | --- |
+| npm run typecheck | PASS |
+| npm test | **198/198**, усі попередні backend cases, 7 suites, 0 failed/skipped |
+| npm run frontend:test | **48/48**, попередні 27 + 21 review regression, 3 files |
+| npm run frontend:build | PASS, TypeScript і Vite production build |
+| npm run test:e2e | **15/15**, попередні 10 + 5 review regression, Chromium 156 |
+
+Для наявних тестів лише додано обов’язковий крок підтвердження; старий 409-тест тепер перевіряє погоджену автоматичну синхронізацію замість ручного очищення conflict message. Жоден сценарій не видалений/пропущений. Backend 198 тестів, Auth frontend tests і Auth E2E файли не змінені.
+
+У нових `frontend/src/orders.review.test.tsx` та `e2e/orders.review.spec.ts` перевірені всі три review-виправлення. Unit-шар використовує mock HTTP та мінімальну jsdom реалізацію dialog.open/close; focus trap, Escape і повернення фокусу перевірені у справжньому Chromium. Для browser network/503 помилок перехоплюються тільки GET запити історії; Auth, POST/DELETE і PostgreSQL залишаються реальними. Сценарій 409 отриманий реальною зміною стану через другий API-клієнт перед скасуванням зі stale UI, а не вигаданою відповіддю.
+
+Регресійний Chromium-тест виявив вихід Tab за межі native dialog; додано явний Tab/Shift+Tab wrap, фінальний повний прогін успішний. У першому новому unit-прогоні helper використовував неіснуючий fireEvent.cancel; замінено стандартною cancel-подією, фінальні 48/48 PASS. Node VM modules / Playwright color warnings успадковані; security audit/CI/manual Windows screenshots не заявляються.
+
+Нове середовище Cloud відновило доступ до workspace; PostgreSQL 18.6 запущено локально. Для backend/E2E створено **окрему нову fixit_orders_review_test** із трьома незміненими міграціями. Private helper `/workspace/.fixit-dev/orders-review-env.sh` поза Git задає DATABASE_URL/TEST_DATABASE_URL і локальний Chromium; actual credentials/connection strings не публікуються. fixit_dev/production/домашня мережа не використовувалися, reset/db push немає. test:migrations повторно в цьому fix не запускався: SQL-схема/міграції не змінені, їхній попередній результат вище є історичним.
+
+Ручна додаткова QA: keyboard Enter відкриває dialog → «Ні» має focus; Tab/Shift+Tab лишаються всередині; Escape/«Ні»/× закривають без нового Network request і повертають focus. «Так» — один DELETE. Для конфлікту скасуйте той самий id іншим клієнтом API із тим самим owner-token, тоді підтвердіть stale UI cancellation: 409 → автоматичний GET, актуальний статус і збережене conflict message. Контрольована помилка GET повинна показати окремий retry, зберігши форму/введений draft; POST лишається доступним для CLIENT. При 401/403 — logout/block відповідно.
+
+Відповіді на GitHub review threads не є approval і не закривають threads. PR залишається для повторного рев’ю Reviewer, без автоматичного merge. Ручні Windows/Postman screenshots не створювалися. Усі попередні обмеження MVP, включно з FIX-17, залишаються, крім погоджених тут UX/sync виправлень.

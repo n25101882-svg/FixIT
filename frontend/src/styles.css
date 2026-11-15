@@ -502,6 +502,21 @@ form > small {
 .status-cancelled, .status-declined { background: #f1e9e1; color: #80553b; }
 .status-completed { background: #dceee5; }
 .dashboard-orders-link { margin-top: 25px; }
+.cancel-order-dialog {
+  width: 440px;
+  max-width: calc(100vw - 36px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 26px;
+  color: var(--green);
+  background: #fffefb;
+}
+.cancel-order-dialog::backdrop { background: rgb(20 35 27 / 55%); }
+.cancel-order-dialog h2 { font-size: 22px; padding-right: 24px; }
+.cancel-order-dialog p { font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.dialog-close { float: right; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+.dialog-actions .primary-button { width: auto; margin: 0; }
 @media (max-width: 900px) {
   .orders-grid { grid-template-columns: minmax(0, 1fr); }
 }

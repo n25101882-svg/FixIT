@@ -1,7 +1,8 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError, type ServiceCategory } from "./api";
 import { useAuth } from "./auth";
+import { CancelOrderDialog } from "./CancelOrderDialog";
 
 interface Order {
   id: string;
@@ -29,43 +30,69 @@ export function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [forbidden, setForbidden] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  const [loaded, setLoaded] = useState(false);
+  const [historyStale, setHistoryStale] = useState(false);
+  const [pendingCancel, setPendingCancel] = useState<Order | null>(null);
+  const historyRequest = useRef(0);
+  const historyController = useRef<AbortController | null>(null);
+  const active = useRef(true);
   const [saving, setSaving] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
-  const busy = saving || cancelling !== null;
+  const busy = saving || cancelling !== null || pendingCancel !== null;
 
-  useEffect(() => {
+  const loadOrders = useCallback(async () => {
+    const request = ++historyRequest.current;
+    historyController.current?.abort();
     const controller = new AbortController();
+    historyController.current = controller;
     setLoading(true);
     setLoadError("");
-    setForbidden(false);
-    api<{ orders: Order[] }>("/orders", { token: token!, signal: controller.signal })
-      .then((data) => { if (!controller.signal.aborted) setOrders(data.orders); })
-      .catch((cause: unknown) => {
-        if (controller.signal.aborted) return;
-        if (cause instanceof ApiError && cause.status === 401) logout(true);
-        else {
-          setForbidden(cause instanceof ApiError && cause.status === 403);
-          setLoadError(cause instanceof Error ? cause.message : "Не вдалося завантажити заявки.");
-        }
-      })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [token, logout, attempt]);
+    try {
+      const data = await api<{ orders: Order[] }>("/orders", { token: token!, signal: controller.signal });
+      if (request !== historyRequest.current || !active.current) return;
+      setOrders(data.orders); setLoaded(true); setHistoryStale(false); setForbidden(false);
+    } catch (cause) {
+      if (controller.signal.aborted || request !== historyRequest.current || !active.current) return;
+      if (cause instanceof ApiError && cause.status === 401) logout(true);
+      else {
+        if (cause instanceof ApiError && cause.status === 403) setForbidden(true);
+        setHistoryStale(true);
+        setLoadError(cause instanceof Error ? cause.message : "Не вдалося завантажити заявки.");
+      }
+    } finally {
+      if (request === historyRequest.current && active.current) setLoading(false);
+    }
+  }, [token, logout]);
+
+  useEffect(() => {
+    active.current = true;
+    void loadOrders();
+    return () => { active.current = false; historyRequest.current++; historyController.current?.abort(); };
+  }, [loadOrders]);
+
+  function invalidatePendingHistory() {
+    // A GET started before the mutation must not overwrite its committed result.
+    historyRequest.current++;
+    historyController.current?.abort();
+    setLoading(false);
+  }
 
   function mutationError(cause: unknown) {
     if (cause instanceof ApiError && cause.status === 401) logout(true);
     else {
+      if (cause instanceof ApiError && cause.status === 403) {
+        invalidatePendingHistory();
+        setForbidden(true);
+      }
       setError(cause instanceof Error ? cause.message : "Не вдалося виконати запит.");
       setFields(cause instanceof ApiError ? cause.fields ?? {} : {});
     }
   }
   function refresh() {
-    setError(""); setFields({}); setNotice("");
-    setAttempt((n) => n + 1);
+    void loadOrders();
   }
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -81,6 +108,8 @@ export function OrdersPage() {
           ...(budget ? { budget } : {}),
         },
       });
+      if (!active.current) return;
+      invalidatePendingHistory();
       setOrders((current) => [order, ...current.filter((item) => item.id !== order.id)]);
       form.reset();
       setNotice("Заявку створено.");
@@ -91,9 +120,19 @@ export function OrdersPage() {
     setCancelling(id); setError(""); setFields({}); setNotice("");
     try {
       const { order } = await api<{ order: Order }>(`/orders/${id}`, { method: "DELETE", token: token! });
+      if (!active.current) return;
+      invalidatePendingHistory();
       setOrders((current) => current.map((item) => item.id === order.id ? order : item));
       setNotice("Заявку скасовано.");
-    } catch (cause) { mutationError(cause); }
+    } catch (cause) {
+      if (!active.current) return;
+      mutationError(cause);
+      if (cause instanceof ApiError && cause.status === 409) {
+        setHistoryStale(true);
+        // Keep the conflict message even when revalidation fails or is retried.
+        await loadOrders();
+      }
+    }
     finally { setCancelling(null); }
   }
   const fieldError = (name: string) => fields[name]
@@ -106,15 +145,10 @@ export function OrdersPage() {
         <Link className="nav-link" to="/dashboard">До кабінету</Link>
       </div>
       <p className="orders-intro">Опишіть проблему, з якою потрібна допомога, та стежте за станом своїх заявок.</p>
-      {loading ? <p role="status">Завантажуємо заявки…</p> : loadError ? (
-        <div className="profile-card">
-          <p className="notice error" role="alert">{loadError}</p>
-          {!forbidden && <button className="secondary-button" onClick={refresh}>Спробувати ще раз</button>}
-        </div>
-      ) : (
-        <>
+      {notice && <p className="notice" role="status">{notice}</p>}
+      {error && <p className="notice error" role="alert">{error}</p>}
           <div className="orders-grid">
-            <form className="profile-card order-form" onSubmit={create} aria-label="Нова заявка">
+            {!forbidden && <form className="profile-card order-form" onSubmit={create} aria-label="Нова заявка">
               <h2>Нова заявка</h2>
               <fieldset disabled={busy} className="order-fields">
                 <label htmlFor="order-title">Назва проблеми</label>
@@ -137,12 +171,16 @@ export function OrdersPage() {
                 {fieldError("budget")}
               </fieldset>
               <button className="primary-button" disabled={busy}>{saving ? "Створюємо…" : "Створити заявку"}</button>
-            </form>
+            </form>}
             <div className="orders-list" aria-label="Мої замовлення">
-              <div className="orders-list-heading"><h2>Історія заявок</h2><button className="secondary-button" disabled={busy} onClick={refresh}>Оновити</button></div>
-              {notice && <p className="notice" role="status">{notice}</p>}
-              {error && <p className="notice error" role="alert">{error}</p>}
-              {orders.length === 0 ? <p className="profile-card">У вас поки немає заявок. Створіть першу.</p> : orders.map((order) => (
+              <div className="orders-list-heading"><h2 id="orders-history-title" tabIndex={-1}>Історія заявок</h2><button className="secondary-button" disabled={busy || loading || forbidden} onClick={refresh}>Оновити</button></div>
+              {loading && <p role="status">Завантажуємо заявки…</p>}
+              {loadError && <div className="notice error"><p role="alert">{loadError}</p>
+                {orders.length > 0 && <p>Історія може бути неактуальною. Оновіть її перед скасуванням.</p>}
+                {!forbidden && <button className="secondary-button" disabled={busy || loading} onClick={refresh}>Спробувати ще раз</button>}
+              </div>}
+              {loaded && !loading && !loadError && orders.length === 0 && <p className="profile-card">У вас поки немає заявок. Створіть першу.</p>}
+              {!forbidden && orders.map((order) => (
                 <article className="profile-card order-card" key={order.id} aria-label={order.title}>
                   <div className="order-card-heading"><h3>{order.title}</h3><span className={`order-status status-${order.status.toLowerCase()}`}>{statuses[order.status]}</span></div>
                   <p className="order-description">{order.description}</p>
@@ -150,14 +188,14 @@ export function OrdersPage() {
                   <p className="order-meta">{order.budget === null ? "Бюджет не вказано" : `${order.budget.replace(".", ",")} грн`}</p>
                   <div className="order-card-footer">
                     <time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString("uk-UA")}</time>
-                    {canCancel(order.status) && <button className="secondary-button" disabled={busy} onClick={() => { void cancel(order.id); }}>{cancelling === order.id ? "Скасовуємо…" : "Скасувати заявку"}</button>}
+                    {canCancel(order.status) && <button className="secondary-button" disabled={busy || loading || historyStale} onClick={() => setPendingCancel(order)}>{cancelling === order.id ? "Скасовуємо…" : "Скасувати заявку"}</button>}
                   </div>
                 </article>
               ))}
             </div>
           </div>
-        </>
-      )}
+      {pendingCancel && <CancelOrderDialog title={pendingCancel.title} onDismiss={() => setPendingCancel(null)}
+        onConfirm={() => { const id = pendingCancel.id; setPendingCancel(null); void cancel(id); }} />}
     </section>
   );
 }

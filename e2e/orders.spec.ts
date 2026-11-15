@@ -81,6 +81,8 @@ test("React → JWT API → PostgreSQL → React creates and logically cancels C
   expect((await request.delete(`${backend}/orders/${created.id}`, { headers: { Authorization: `Bearer ${b.token}` } })).status()).toBe(403);
   const cancelledResponse = page.waitForResponse((r) => r.url().endsWith(`/orders/${created.id}`) && r.request().method() === "DELETE");
   await card.getByRole("button", { name: "Скасувати заявку" }).click();
+  await expect(page.getByRole("dialog", { name: "Скасувати заявку?" })).toBeVisible();
+  await page.getByRole("button", { name: "Так, скасувати", exact: true }).click();
   expect((await cancelledResponse).status()).toBe(200);
   await expect(card.getByText("Скасована", { exact: true })).toBeVisible();
   await expect(card.getByRole("button", { name: "Скасувати заявку" })).toHaveCount(0);

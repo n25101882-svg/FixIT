@@ -82,6 +82,7 @@ test("DELETE keeps the card, changes status to Cancelled and removes its cancel 
   const mock = vi.fn().mockResolvedValueOnce(json({ orders: [order] })).mockResolvedValueOnce(json({ order: { ...order, status: "CANCELLED" } }));
   vi.stubGlobal("fetch", mock); show();
   await userEvent.click(await screen.findByRole("button", { name: "Скасувати заявку" }));
+  await userEvent.click(screen.getByRole("button", { name: "Так, скасувати" }));
   expect(await screen.findByRole("status")).toHaveTextContent("Заявку скасовано");
   expect(screen.getByRole("article", { name: order.title })).toBeInTheDocument();
   expect(screen.getByText("Скасована")).toBeInTheDocument();
@@ -91,17 +92,16 @@ test("DELETE keeps the card, changes status to Cancelled and removes its cancel 
   expect(mock.mock.calls[1]?.[1].body).toBeUndefined();
   expect(mock).toHaveBeenCalledTimes(2);
 });
-test("409 cancellation displays Error and preserves the current card", async () => {
+test("409 cancellation displays Error and automatically synchronizes the card", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ orders: [order] })).mockResolvedValueOnce(json({ error: { message: "Поточний стан не дозволяє скасування." } }, 409))
     .mockResolvedValueOnce(json({ orders: [{ ...order, status: "CANCELLED" }] })));
   show();
   await userEvent.click(await screen.findByRole("button", { name: "Скасувати заявку" }));
+  await userEvent.click(screen.getByRole("button", { name: "Так, скасувати" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Поточний стан не дозволяє скасування");
-  expect(screen.getByText("Відкрита")).toBeInTheDocument();
   expect(screen.queryByText("Заявку скасовано.")).not.toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Оновити" }));
   await screen.findByText("Скасована");
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent("Поточний стан не дозволяє скасування");
   expect(screen.queryByRole("button", { name: "Скасувати заявку" })).not.toBeInTheDocument();
 });
 test("list errors support retry", async () => {
