@@ -4,6 +4,7 @@ import {
   type OrderStatus,
   type PrismaClient,
 } from "../generated/prisma/client.js";
+import { publicMasterSelect } from "./dto.js";
 
 type Transaction = Prisma.TransactionClient;
 export class OrderError extends Error {
@@ -48,11 +49,52 @@ async function lockedOrder(tx: Transaction, id: string) {
   if (!order) throw new OrderError("NOT_FOUND", "Order not found");
   return order;
 }
+async function masterProfile(tx: Transaction, actorId: string) {
+  const user = await actor(tx, actorId, "MASTER");
+  await tx.$queryRaw`SELECT id FROM master_profiles WHERE user_id=${user.id}::uuid FOR SHARE`;
+  const profile = await tx.masterProfile.findUnique({ where: { userId: user.id } });
+  if (!profile) throw new OrderError("FORBIDDEN", "Master profile is required");
+  return profile;
+}
+function audience(profile: { city: string; category: Category }) {
+  // Prisma insensitive equals uses ILIKE. Escape wildcard characters so a
+  // profile city such as '%' cannot grant access to every city's orders.
+  return { city: { equals: profile.city.trim().replace(/[\\%_]/g, "\\$&"), mode: "insensitive" as const }, category: profile.category };
+}
 
 /** Internal server command layer. actorId must come from trusted authentication,
  * never a request-body user ID. HTTP controllers delegate mutations here. */
 export function createOrderService(database: PrismaClient) {
   return {
+    listAvailable(actorId: string) {
+      return database.$transaction(async (tx) => {
+        const profile = await masterProfile(tx, actorId);
+        return tx.order.findMany({
+          where: { type: "CUSTOM", status: "OPEN", masterProfileId: null, ...audience(profile) },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          include: { responses: { where: { masterProfileId: profile.id }, select: { id: true, message: true, proposedPrice: true, createdAt: true } } },
+        });
+      });
+    },
+    listAssigned(actorId: string) {
+      return database.$transaction(async (tx) => {
+        const profile = await masterProfile(tx, actorId);
+        return tx.order.findMany({ where: { type: "CUSTOM", masterProfileId: profile.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+      });
+    },
+    listResponses(actorId: string, orderId: string) {
+      return database.$transaction(async (tx) => {
+        const client = await actor(tx, actorId, "CLIENT");
+        const order = await tx.order.findUnique({ where: { id: orderId }, include: {
+          masterProfile: { select: publicMasterSelect },
+          responses: { orderBy: [{ createdAt: "asc" }, { id: "asc" }], include: { masterProfile: { select: publicMasterSelect } } },
+        } });
+        if (!order) throw new OrderError("NOT_FOUND", "Order not found");
+        if (order.clientId !== client.id) throw new OrderError("FORBIDDEN", "Only the owner can read responses");
+        if (order.type !== "CUSTOM") throw new OrderError("INVALID_INPUT", "Only CUSTOM orders have responses");
+        return order;
+      });
+    },
     createStandard(
       actorId: string,
       input: {
@@ -133,12 +175,7 @@ export function createOrderService(database: PrismaClient) {
       const proposedPrice = input.proposedPrice == null ? null : money(input.proposedPrice);
       const message = text(input.message, "message");
       return database.$transaction(async (tx) => {
-        const master = await actor(tx, actorId, "MASTER");
-        const profile = await tx.masterProfile.findUnique({
-          where: { userId: master.id },
-        });
-        if (!profile)
-          throw new OrderError("FORBIDDEN", "Master profile is required");
+        const profile = await masterProfile(tx, actorId);
         const order = await lockedOrder(tx, input.orderId);
         if (order.type !== "CUSTOM" || order.status !== "OPEN")
           throw new OrderError("CONFLICT", "Order is not open for offers");
@@ -153,6 +190,8 @@ export function createOrderService(database: PrismaClient) {
           })
         )
           throw new OrderError("CONFLICT", "Master already responded");
+        if (!await tx.order.findFirst({ where: { id: order.id, ...audience(profile) }, select: { id: true } }))
+          throw new OrderError("FORBIDDEN", "Order city/category must match the master's profile");
         return tx.orderResponse.create({
           data: {
             orderId: order.id,

@@ -40,12 +40,15 @@ async function rollback(action) {
   }
 }
 async function withCommands(action) {
-  return rollback((tx) =>
-    action(
+  return rollback(async (tx) => {
+    // Eligibility is now checked by respond(); align only this rolled-back fixture.
+    await tx.masterProfile.updateMany({ where: { id: { in: [ids.profileA, ids.profileB] } },
+      data: { city: customInput.city, category: customInput.category } });
+    return action(
       createOrderService({ $transaction: (callback) => callback(tx) }),
       tx,
-    ),
-  );
+    );
+  });
 }
 const rejects = (action, code) =>
   expect(Promise.resolve().then(action)).rejects.toMatchObject({ code });
@@ -431,55 +434,62 @@ describe("server commands (trusted actor boundary, no Auth imported)", () => {
   test("concurrent selections commit exactly one executor and one history event", async () => {
     // This test intentionally commits one synthetic history to exercise two real
     // connections/transactions. It stays only in the isolated *_test database.
-    const order = await commands.createCustom(ids.clientA, {
-      ...customInput,
-      title: "Concurrent synthetic selection",
-    });
-    const a = await commands.respond(ids.masterA, {
-      orderId: order.id,
-      proposedPrice: "10.01",
-      message: "A",
-    });
-    const b = await commands.respond(ids.masterB, {
-      orderId: order.id,
-      proposedPrice: "20.02",
-      message: "B",
-    });
-    const results = await Promise.allSettled(
-      [a, b].map((response) =>
-        commands.selectResponse(ids.clientA, {
-          orderId: order.id,
-          responseId: response.id,
-        }),
-      ),
-    );
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    expect(results.filter((r) => r.status === "rejected")[0].reason.code).toBe(
-      "CONFLICT",
-    );
-    const selected = await database.order.findUniqueOrThrow({
-      where: { id: order.id },
-    });
-    const winner = [a, b].find(
-      (r) => r.masterProfileId === selected.masterProfileId,
-    );
-    expect(selected.status).toBe("ACCEPTED");
-    expect(selected.priceAtOrder.toFixed(2)).toBe(
-      winner.proposedPrice.toFixed(2),
-    );
-    expect(selected.statusHistory).toHaveLength(2);
-    expect(selected.statusHistory.at(-1).actorUserId).toBe(ids.clientA);
-    await expect(
-      rollback((tx) => tx.orderResponse.delete({ where: { id: winner.id } })),
-    ).rejects.toThrow();
-    await rejects(
-      () =>
-        commands.respond(ids.masterA, {
-          orderId: order.id,
-          proposedPrice: "1.00",
-          message: "too late",
-        }),
-      "CONFLICT",
-    );
+    const originalB = await database.masterProfile.findUniqueOrThrow({ where: { id: ids.profileB } });
+    try {
+      await database.masterProfile.update({ where: { id: ids.profileB }, data: { city: "Тестоград", category: "PLUMBING" } });
+      const order = await commands.createCustom(ids.clientA, {
+        ...customInput,
+        category: "PLUMBING",
+        title: "Concurrent synthetic selection",
+      });
+      const a = await commands.respond(ids.masterA, {
+        orderId: order.id,
+        proposedPrice: "10.01",
+        message: "A",
+      });
+      const b = await commands.respond(ids.masterB, {
+        orderId: order.id,
+        proposedPrice: "20.02",
+        message: "B",
+      });
+      const results = await Promise.allSettled(
+        [a, b].map((response) =>
+          commands.selectResponse(ids.clientA, {
+            orderId: order.id,
+            responseId: response.id,
+          }),
+        ),
+      );
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter((r) => r.status === "rejected")[0].reason.code).toBe(
+        "CONFLICT",
+      );
+      const selected = await database.order.findUniqueOrThrow({
+        where: { id: order.id },
+      });
+      const winner = [a, b].find(
+        (r) => r.masterProfileId === selected.masterProfileId,
+      );
+      expect(selected.status).toBe("ACCEPTED");
+      expect(selected.priceAtOrder.toFixed(2)).toBe(
+        winner.proposedPrice.toFixed(2),
+      );
+      expect(selected.statusHistory).toHaveLength(2);
+      expect(selected.statusHistory.at(-1).actorUserId).toBe(ids.clientA);
+      await expect(
+        rollback((tx) => tx.orderResponse.delete({ where: { id: winner.id } })),
+      ).rejects.toThrow();
+      await rejects(
+        () =>
+          commands.respond(ids.masterA, {
+            orderId: order.id,
+            proposedPrice: "1.00",
+            message: "too late",
+          }),
+        "CONFLICT",
+      );
+    } finally {
+      await database.masterProfile.update({ where: { id: ids.profileB }, data: { city: originalB.city, category: originalB.category } });
+    }
   });
 });

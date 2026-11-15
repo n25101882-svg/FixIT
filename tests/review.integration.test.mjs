@@ -135,6 +135,7 @@ test("a text-only CUSTOM response can be selected atomically without a price", a
   await rollback(async (tx) => {
     const commands = commandsFor(tx);
     const order = await createOrder(tx, "CUSTOM");
+    await tx.masterProfile.update({ where: { id: ids.profileA }, data: { city: order.city, category: order.category } });
     const response = await commands.respond(ids.masterA, { orderId: order.id, message: "Inspection needed before estimating" });
     expect(response.proposedPrice).toBeNull();
     const selected = await commands.selectResponse(ids.clientA, { orderId: order.id, responseId: response.id });
