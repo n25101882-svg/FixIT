@@ -835,3 +835,9 @@ dd {
     transition: none !important;
   }
 }
+.order-details-info div { padding: .75rem 0; border-bottom: 1px solid #e4e9e2; }
+.order-details-info dt { color: #65776a; font-size: .875rem; }
+.order-details-info dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
+.order-timeline { padding-left: 1.5rem; }
+.order-timeline li { padding: .65rem .5rem; color: #234b3a; }
+.order-timeline li span, .order-timeline li small { display: block; margin-top: .25rem; color: #65776a; }

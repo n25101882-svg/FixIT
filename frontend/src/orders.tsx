@@ -213,6 +213,7 @@ export function OrdersPage() {
                   {order.type === "CUSTOM" && <ClientOffers order={order} onOrderChange={updateFromOffers} />}
                   <div className="order-card-footer">
                     <time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString("uk-UA")}</time>
+                    <Link className="nav-link" to={`/orders/${order.id}`}>Переглянути деталі</Link>
                     {canCancel(order.status) && <button className="secondary-button" disabled={busy || loading || historyStale} onClick={() => setPendingCancel(order)}>{cancelling === order.id ? "Скасовуємо…" : "Скасувати заявку"}</button>}
                   </div>
                 </article>

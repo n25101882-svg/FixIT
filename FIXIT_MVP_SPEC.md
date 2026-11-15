@@ -132,7 +132,7 @@ CLIENT у власній історії після «Оновити» бачит
 
 DTO додають nullable completedAt: ISO-дата реальної COMPLETED-події statusHistory з source=database. Для legacy_migration/невідомого часу — null, без підміни createdAt/updatedAt або часу міграції. Нових колонок немає. MASTER не отримує raw statusHistory/actorUserId чи приватні поля користувачів.
 
-Сумісність STANDARD PENDING → ACCEPTED/DECLINED перевірена через той самий PATCH на синтетичних integration fixtures, без публічної US-04. На етапі PR #7 assigned list/UI були CUSTOM-only; US-04 нижче додає STANDARD і завершує цю частину US-08/FIX-8. FIX-9 покрито частково (актуальний стан/відома дата), не повний timeline. [Звіт US-08](docs/US_08.md); FIX-17, Prisma/DBML, три міграції та JWT-архітектура незмінні.
+Сумісність STANDARD PENDING → ACCEPTED/DECLINED перевірена через той самий PATCH на синтетичних integration fixtures, без публічної US-04. На етапі PR #7 assigned list/UI були CUSTOM-only; US-04 нижче додає STANDARD і завершує цю частину US-08/FIX-8. На етапі PR #7 FIX-9 було покрито частково (актуальний стан/відома дата); US-09 нижче додає timeline. [Звіт US-08](docs/US_08.md); FIX-17, Prisma/DBML, три міграції та JWT-архітектура незмінні.
 
 ## US-02 / US-03: профіль, послуги та публічний каталог
 
@@ -146,7 +146,7 @@ Public GET /api/v1/catalog/services фільтрує isActive=true на серв
 
 ## US-04 / US-08: STANDARD замовлення та спільна історія
 
-Публічні картки передають Service.id у захищений /orders/new/standard/:serviceId. Guest login/register зберігають тільки allowlisted STANDARD UUID returnTo; зовнішні URLs, інші paths, query/hash/traversal не приймаються. CLIENT отримує GET /api/v1/orders/standard/:id (active service/public master/preview fingerprint), описує проблему, явно підтверджує місто надання послуги. Order.city лишається snapshot MasterProfile.city; району/адреси як нових колонок немає. Район можна вказати в приватному описі проблеми.
+Публічні картки передають Service.id у захищений /orders/new/standard/:serviceId. Guest login/register зберігають allowlisted STANDARD UUID returnTo; US-09 також дозволяє CLIENT/MASTER details UUID paths. Зовнішні URLs, інші paths, query/hash/traversal не приймаються. CLIENT отримує GET /api/v1/orders/standard/:id (active service/public master/preview fingerprint), описує проблему, явно підтверджує місто надання послуги. Order.city лишається snapshot MasterProfile.city; району/адреси як нових колонок немає. Район можна вказати в приватному описі проблеми.
 
 POST /api/v1/orders/standard: strict serviceId UUID, description trim 1–4000, optional expectedSnapshot SHA-256 hex. 201 `{order}` тільки після commit. Сервер derive-ить clientId з JWT, masterProfileId із Service, type=STANDARD/status=PENDING та title/category/city/priceAtOrder із locked rows. Внутрішній optional masterProfileId у createStandard() збережено лише як assertion сумісності старих callers/tests, не як джерело призначення; зовнішній body забороняє це поле.
 
@@ -157,3 +157,13 @@ POST /api/v1/orders/standard: strict serviceId UUID, description trim 1–4000, 
 listAssigned() тепер повертає всі Orders поточного MasterProfile без type-фільтра. STANDARD PENDING має ACCEPTED/DECLINED дії; ACCEPTED/IN_PROGRESS обох типів — початок/завершення. Вся матриця й ownership залишаються в незмінному transition() та SQL triggers. Shared CLIENT history показує тип, історичні title/city/category/price, executor/current public name, created/completed дату/статус. PENDING/ACCEPTED можна логічно скасувати; IN_PROGRESS/COMPLETED/DECLINED/CANCELLED — ні. Ні скасовані, ні відхилені записи не видаляються.
 
 [Фактичні результати й контракти](docs/US_04_STANDARD.md), [Windows QA / status_history](docs/WINDOWS_STANDARD_QA.md). Schema/DBML/три міграції, JWT/CORS/rate limits, CUSTOM offers/selection/lifecycle та services/catalog збережені.
+
+## US-09 / FIX-9: приватні деталі та timeline
+
+GET /api/v1/orders/:id — CLIENT, clientId із JWT і поточна роль у scoped DB query. GET /api/v1/master/orders/:id — MASTER, masterProfile.userId із JWT і поточна роль в тому самому query. Foreign/missing — однаковий безпечний 404, wrong role — 403, invalid/missing/expired JWT — 401, invalid UUID або сторонні query — 400. Сам факт пропозиції чи доступ до OPEN feed не надає приватних деталей. MASTER бачить власні STANDARD PENDING та подальші стани, призначені CUSTOM і збережені terminal записи.
+
+Нові detail DTO побудовані на publicOrder/masterOrder; чинні списки та мутації зберігають контракти. В detail замість raw statusHistory — timeline з known status, ISO at або null, optional source лише database/legacy_migration. Actor IDs, непідтверджений actorRole і довільні legacy поля не повертаються. Датовані події сортуються за часом, при однаковому часі порядок стабільний; undated після них у початковому порядку з явним повідомленням. Невідомі статуси/необ’єктні entries пропускаються, порожня історія має окремий стан. Legacy observation не є датою справжнього переходу/завершення; completedAt тільки з валідної ISO COMPLETED database-події. Created/updated часом завершення не підмінюється.
+
+React /orders/:id і /master/orders/:id мають спільну read-only сторінку, Loading/404/Forbidden/network/5xx/retry/refresh, clear при помилці, abort/ignore застарілих GET після route change/unmount. 401 викликає чинний logout. Строгий allowlist returnTo зберігає UUID details URL через повторний login без token persistence; FIX-17 лишається. Посилання є у CLIENT історії та MASTER assignments, дії/пропозиції використовуються у наявних списках. Скасування OPEN/PENDING/ACCEPTED, заборона після початку, збереження CANCELLED/DECLINED/COMPLETED та матриця transition() незмінні.
+
+Схема, 3 міграції, SQL triggers, сервіс бізнес-команд та historical snapshots незмінні; idempotency, chat/payments/notifications/ratings поза scope. [Контракти, перевірки та ручний Windows QA](docs/US_09_ORDER_DETAILS.md).

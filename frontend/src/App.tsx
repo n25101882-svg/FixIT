@@ -16,7 +16,9 @@ import { AssignedOrders, MasterOrdersPage } from "./master-orders";
 import { CatalogPage, PublicMasterPage } from "./catalog";
 import { MasterServicesPage } from "./master-services";
 import { StandardOrderPage } from "./standard-order";
-import { safeStandardReturn, standardAuthPath } from "./standard-return";
+import { standardAuthPath } from "./standard-return";
+import { safeOrderReturn } from "./order-return";
+import { OrderDetailsPage } from "./order-details";
 
 const roles = { CLIENT: "Клієнт", MASTER: "Майстер", ADMIN: "Адміністратор" };
 const categories: Record<ServiceCategory, string> = {
@@ -108,7 +110,7 @@ function ProtectedRoute() {
   return token ? (
     <Outlet />
   ) : (
-    <Navigate to={standardAuthPath("/login", safeStandardReturn(location.pathname))} replace state={{ expired: sessionExpired }} />
+    <Navigate to={standardAuthPath("/login", safeOrderReturn(location.pathname))} replace state={{ expired: sessionExpired }} />
   );
 }
 
@@ -117,7 +119,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
   const { token, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const returnTo = safeStandardReturn(new URLSearchParams(location.search).get("returnTo"));
+  const returnTo = safeOrderReturn(new URLSearchParams(location.search).get("returnTo"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -549,6 +551,8 @@ export function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/orders/new/standard/:serviceId" element={<StandardOrderPage />} />
+          <Route path="/orders/:id" element={<OrderDetailsPage audience="CLIENT" />} />
+          <Route path="/master/orders/:id" element={<OrderDetailsPage audience="MASTER" />} />
           <Route path="/master/orders" element={<MasterOrdersPage />} />
           <Route path="/master/services" element={<MasterServicesPage />} />
         </Route>

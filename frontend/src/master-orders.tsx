@@ -45,6 +45,7 @@ function OrderDetails({ order }: { order: MasterOrder }) {
     <p className="order-meta">{order.city} · {categories[order.category]}</p>
     <p className="order-meta">{order.type === "STANDARD" ? "Замовлення послуги" : "Індивідуальна заявка"}</p>
     <p className="order-meta">{order.type === "STANDARD" ? order.priceAtOrder == null ? "Ціна за домовленістю" : `Ціна на момент замовлення: ${order.priceAtOrder} грн` : order.budget === null ? "Бюджет не вказано" : `${order.budget} грн`}</p>
+    <p className="order-meta">Створено: {new Date(order.createdAt).toLocaleString("uk-UA")}</p>
     {order.status === "COMPLETED" && order.completedAt && <p className="order-meta">Завершено: <time dateTime={order.completedAt}>{new Date(order.completedAt).toLocaleString("uk-UA")}</time></p>}
   </>;
 }
@@ -128,6 +129,7 @@ export function AssignedOrders() {
     {!loading && !error && orders.length === 0 && <p>Призначених заявок поки немає.</p>}
     {!forbidden && orders.map((order) => <article className="profile-card order-card" key={order.id} aria-label={order.title}>
       <OrderDetails order={order} />
+      <Link className="nav-link" to={`/master/orders/${order.id}`}>Переглянути деталі</Link>
       {blocked.has(order.id) && <p className="notice error">Немає дозволу змінювати цю заявку.</p>}
       {uncertain.has(order.id) && <p className="notice">Оновіть призначення перед повторною дією.</p>}
       {((order.type === "STANDARD" && order.status === "PENDING" ? ["ACCEPTED", "DECLINED"]

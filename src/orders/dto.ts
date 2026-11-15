@@ -1,4 +1,5 @@
-import type { Order, Prisma } from "../generated/prisma/client.js";
+import { OrderStatus, type Order, type Prisma } from "../generated/prisma/client.js";
+import { z } from "zod";
 
 export const publicMasterSelect = {
   id: true, city: true, category: true, description: true,
@@ -14,8 +15,8 @@ function completedAt(order: Order): string | null {
     // A legacy migration observation is not the actual completion time.
     if (event && typeof event === "object" && !Array.isArray(event)
       && event.status === "COMPLETED" && event.source === "database" && typeof event.at === "string") {
-      const date = new Date(event.at);
-      if (!Number.isNaN(date.getTime())) return date.toISOString();
+      const time = normalizedEventTime(event.at);
+      if (time) return time;
     }
   }
   return null;
@@ -39,6 +40,41 @@ export function masterOrder(order: Order) {
     budget: order.budget?.toFixed(2) ?? null, serviceId: order.serviceId,
     priceAtOrder: order.priceAtOrder?.toFixed(2) ?? null,
     createdAt: order.createdAt, updatedAt: order.updatedAt, completedAt: completedAt(order) };
+}
+
+const eventTime = z.iso.datetime({ offset: true });
+function normalizedEventTime(value: unknown): string | null {
+  const valid = eventTime.safeParse(value);
+  const time = valid.success ? new Date(valid.data) : null;
+  return time && Number.isFinite(time.getTime()) ? time.toISOString() : null;
+}
+const knownStatuses = new Set<string>(Object.values(OrderStatus));
+export interface TimelineEvent {
+  status: OrderStatus;
+  at: string | null;
+  source?: "database" | "legacy_migration";
+}
+/** Explicit allowlist: audit identities and arbitrary legacy metadata never leave
+ * the server. A migration observation is labelled, not invented as a transition.
+ * Undated events follow dated events; original order breaks equal-time ties. */
+export function safeTimeline(history: unknown): TimelineEvent[] {
+  if (!Array.isArray(history)) return [];
+  const events: TimelineEvent[] = [];
+  for (const value of history) {
+    if (!value || typeof value !== "object" || Array.isArray(value)
+      || !knownStatuses.has(value.status)) continue;
+    events.push({ status: value.status as OrderStatus,
+      at: normalizedEventTime(value.at),
+      ...(value.source === "database" || value.source === "legacy_migration" ? { source: value.source } : {}),
+    });
+  }
+  return events.sort((a, b) => a.at === null ? (b.at === null ? 0 : 1)
+    : b.at === null ? -1 : a.at.localeCompare(b.at));
+}
+export function orderDetails(order: Order & { masterProfile?: Master | null }, audience: "CLIENT" | "MASTER") {
+  const { statusHistory, ...client } = publicOrder(order);
+  const safe = audience === "CLIENT" ? client : { ...masterOrder(order), assignedMaster: client.assignedMaster };
+  return { ...safe, timeline: safeTimeline(statusHistory) };
 }
 export function publicResponse(response: {
   id: string; orderId: string; message: string; createdAt: Date;
