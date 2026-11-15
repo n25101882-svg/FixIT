@@ -25,7 +25,7 @@
     "frontend:dev": "npm run dev --workspace @fixit/frontend --",
     "frontend:build": "npm run build --workspace @fixit/frontend",
     "frontend:test": "npm run test --workspace @fixit/frontend",
-    "test:e2e": "npm run build && playwright test --grep-invert \"@offers|@lifecycle|@catalog\" && playwright test --grep @offers && playwright test --grep @lifecycle && playwright test --grep @catalog",
+    "test:e2e": "npm run build && playwright test --grep-invert \"@offers|@lifecycle|@catalog|@standard\" && playwright test --grep @offers && playwright test --grep @lifecycle && playwright test --grep @catalog && playwright test --grep @standard",
     "test:migrations": "npm run build && node scripts/verify-migrations.mjs",
     "frontend:coverage": "npm run coverage --workspace @fixit/frontend"
   },

@@ -15,6 +15,8 @@ import { OrdersPage } from "./orders";
 import { AssignedOrders, MasterOrdersPage } from "./master-orders";
 import { CatalogPage, PublicMasterPage } from "./catalog";
 import { MasterServicesPage } from "./master-services";
+import { StandardOrderPage } from "./standard-order";
+import { safeStandardReturn, standardAuthPath } from "./standard-return";
 
 const roles = { CLIENT: "Клієнт", MASTER: "Майстер", ADMIN: "Адміністратор" };
 const categories: Record<ServiceCategory, string> = {
@@ -102,10 +104,11 @@ function Layout() {
 
 function ProtectedRoute() {
   const { token, sessionExpired } = useAuth();
+  const location = useLocation();
   return token ? (
     <Outlet />
   ) : (
-    <Navigate to="/login" replace state={{ expired: sessionExpired }} />
+    <Navigate to={standardAuthPath("/login", safeStandardReturn(location.pathname))} replace state={{ expired: sessionExpired }} />
   );
 }
 
@@ -114,11 +117,12 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
   const { token, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const returnTo = safeStandardReturn(new URLSearchParams(location.search).get("returnTo"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [role, setRole] = useState<"CLIENT" | "MASTER">("CLIENT");
-  if (token) return <Navigate to="/dashboard" replace />;
+  if (token) return <Navigate to={returnTo ?? "/dashboard"} replace />;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -153,7 +157,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
           method: "POST",
           body: payload,
         });
-        navigate("/login", {
+        navigate(standardAuthPath("/login", returnTo), {
           replace: true,
           state: { registered: true, email },
         });
@@ -163,7 +167,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
           body: { email, password },
         });
         login(result.accessToken);
-        navigate("/dashboard", { replace: true });
+        navigate(returnTo ?? "/dashboard", { replace: true });
       }
     } catch (cause) {
       setError(
@@ -401,7 +405,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
         <p className="form-switch">
           {registration ? "Уже маєте акаунт?" : "Ще не з нами?"}{" "}
           <Link
-            to={registration ? "/login" : "/register"}
+            to={standardAuthPath(registration ? "/login" : "/register", returnTo)}
             onClick={() => {
               setError("");
               setFields({});
@@ -544,6 +548,7 @@ export function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/orders/new/standard/:serviceId" element={<StandardOrderPage />} />
           <Route path="/master/orders" element={<MasterOrdersPage />} />
           <Route path="/master/services" element={<MasterServicesPage />} />
         </Route>

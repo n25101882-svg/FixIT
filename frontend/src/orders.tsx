@@ -20,6 +20,8 @@ export interface Order {
   updatedAt?: string;
   statusHistory?: { status: string }[];
   completedAt?: string | null;
+  serviceId?: string | null;
+  priceAtOrder?: string | null;
 }
 function newest(incoming: Order, current?: Order): Order {
   if (current && ((current.statusHistory?.length ?? 0) > (incoming.statusHistory?.length ?? 0)
@@ -200,9 +202,12 @@ export function OrdersPage() {
               {!forbidden && orders.map((order) => (
                 <article className="profile-card order-card" key={order.id} aria-label={order.title}>
                   <div className="order-card-heading"><h3>{order.title}</h3><span className={`order-status status-${order.status.toLowerCase()}`}>{statuses[order.status]}</span></div>
+                  <p className="order-meta">{order.type === "STANDARD" ? "Замовлення послуги" : "Індивідуальна заявка"}</p>
                   <p className="order-description">{order.description}</p>
                   <p className="order-meta">{order.city} · {categories[order.category]}</p>
-                  <p className="order-meta">{order.budget === null ? "Бюджет не вказано" : `${order.budget.replace(".", ",")} грн`}</p>
+                  <p className="order-meta">{order.type === "STANDARD"
+                    ? order.priceAtOrder == null ? "Ціна за домовленістю" : `Ціна на момент замовлення: ${order.priceAtOrder.replace(".", ",")} грн`
+                    : order.budget === null ? "Бюджет не вказано" : `${order.budget.replace(".", ",")} грн`}</p>
                   {order.assignedMaster && <p className="notice">Виконавець: {order.assignedMaster.name}</p>}
                   {order.status === "COMPLETED" && order.completedAt && <p className="order-meta">Завершено: <time dateTime={order.completedAt}>{new Date(order.completedAt).toLocaleString("uk-UA")}</time></p>}
                   {order.type === "CUSTOM" && <ClientOffers order={order} onOrderChange={updateFromOffers} />}

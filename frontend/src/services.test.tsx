@@ -126,7 +126,8 @@ test.each([409, 503])("mutation %s preserves service inputs and requires GET bef
 test("guest root opens catalog and public GET never sends JWT", async () => {
   const mock = vi.fn().mockResolvedValue(json(page)); vi.stubGlobal("fetch", mock); show("/", false);
   expect(await screen.findByRole("article", { name: service.title })).toBeInTheDocument(); expect(mock.mock.calls[0]?.[0]).toMatch(/\/catalog\/services/);
-  expect(mock.mock.calls[0]?.[1].headers.Authorization).toBeUndefined(); expect(screen.getByRole("button", { name: "Замовити послугу" })).toBeDisabled();
+  expect(mock.mock.calls[0]?.[1].headers.Authorization).toBeUndefined(); expect(screen.getByRole("button", { name: "Замовити послугу" })).toBeEnabled();
+  expect(mock.mock.calls.every((call) => call[1].method === "GET")).toBe(true);
 });
 test("catalog shows nullable price, separate categories and no private fields", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ ...page, services: [{ ...service, priceEstimate: null, description: null, master: { ...profile, email: "private@fixit.test", passwordHash: "private-hash" } }] })));

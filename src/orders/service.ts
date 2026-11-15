@@ -5,6 +5,7 @@ import {
   type PrismaClient,
 } from "../generated/prisma/client.js";
 import { publicMasterSelect } from "./dto.js";
+import { standardSnapshot } from "./standard-snapshot.js";
 
 type Transaction = Prisma.TransactionClient;
 export class OrderError extends Error {
@@ -79,7 +80,7 @@ export function createOrderService(database: PrismaClient) {
     listAssigned(actorId: string) {
       return database.$transaction(async (tx) => {
         const profile = await masterProfile(tx, actorId);
-        return tx.order.findMany({ where: { type: "CUSTOM", masterProfileId: profile.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+        return tx.order.findMany({ where: { masterProfileId: profile.id }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
       });
     },
     listResponses(actorId: string, orderId: string) {
@@ -99,27 +100,37 @@ export function createOrderService(database: PrismaClient) {
       actorId: string,
       input: {
         serviceId: string;
-        masterProfileId: string;
+        masterProfileId?: string;
         description: string;
+        expectedSnapshot?: string;
       },
     ) {
-      const description = text(input.description, "description");
+      const description = text(input.description, "description", 4000);
       return database.$transaction(async (tx) => {
         const client = await actor(tx, actorId, "CLIENT");
+        const origin = await tx.service.findUnique({ where: { id: input.serviceId }, select: { masterProfileId: true } });
+        if (!origin) throw new OrderError("NOT_FOUND", "Service not found");
+        // Match service CRUD's profile → service lock order. Both mutable rows
+        // stay locked until the order commits, including the profile's city.
+        await tx.$queryRaw`SELECT id FROM master_profiles WHERE id=${origin.masterProfileId}::uuid FOR SHARE`;
         await tx.$queryRaw`SELECT id FROM services WHERE id=${input.serviceId}::uuid FOR SHARE`;
         const service = await tx.service.findUnique({
           where: { id: input.serviceId },
           include: { masterProfile: true },
         });
         if (!service) throw new OrderError("NOT_FOUND", "Service not found");
+        if (service.masterProfileId !== origin.masterProfileId)
+          throw new OrderError("CONFLICT", "Service owner changed; reload preview");
         if (
           !service.isActive ||
-          service.masterProfileId !== input.masterProfileId
+          (input.masterProfileId !== undefined && service.masterProfileId !== input.masterProfileId)
         )
           throw new OrderError(
             "INVALID_INPUT",
             "Inactive service or wrong master",
           );
+        if (input.expectedSnapshot !== undefined && input.expectedSnapshot !== standardSnapshot(service))
+          throw new OrderError("CONFLICT", "Service snapshot changed; reload preview");
         return tx.order.create({
           data: {
             type: "STANDARD",
