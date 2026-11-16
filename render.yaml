@@ -5,7 +5,7 @@
       "runtime": "node",
       "name": "fixit-web",
       "repo": "https://github.com/n25101882-svg/FixIT",
-      "branch": "develop",
+      "branch": "release/v1.0.0",
       "region": "frankfurt",
       "plan": "free",
       "autoDeployTrigger": "off",
