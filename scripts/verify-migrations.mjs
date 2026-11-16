@@ -45,6 +45,7 @@ const directory = mkdtempSync(join(tmpdir(), "fixit-hybrid-migrations-"));
 const initialName = "20261109200000_init_database_schema";
 const hybridName = "20261114130000_hybrid_mvp";
 const reviewName = "20261114150000_review_snapshot_alignment";
+const sessionName = "20261116090000_add_auth_sessions";
 const initialPath = join(
   root,
   "prisma/migrations",
@@ -123,13 +124,14 @@ try {
   await upgrade.connect();
   await empty(clean);
   await empty(upgrade);
-  deploy(cleanUrl, "fresh database applies all three migrations");
+  deploy(cleanUrl, "fresh database applies all four migrations");
   const tables = (
     await clean.query(
       "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename <> '_prisma_migrations' ORDER BY tablename",
     )
   ).rows.map((r) => r.tablename);
   assert.deepEqual(tables, [
+    "auth_sessions",
     "master_profiles",
     "order_responses",
     "orders",
@@ -255,7 +257,10 @@ try {
   // Model a database that already ran Hybrid: the review migration must only
   // install guards/optional fields, never rewrite historical snapshots/events.
   const beforeReview = (await upgrade.query("SELECT to_jsonb(o) AS value FROM orders o ORDER BY id")).rows;
-  deploy(upgradeUrl, "apply review follow-up to the existing Hybrid database");
+  const reviewDir = join(directory, "migrations", reviewName);
+  mkdirSync(reviewDir);
+  copyFileSync(join(root, "prisma/migrations", reviewName, "migration.sql"), join(reviewDir, "migration.sql"));
+  deploy(upgradeUrl, "apply review follow-up to the existing Hybrid database", config);
   const afterReview = (await upgrade.query("SELECT to_jsonb(o) - 'budget' AS value FROM orders o ORDER BY id")).rows;
   assert.deepEqual(afterReview, beforeReview, "Review migration rewrote existing order data/history");
   const after = (await upgrade.query("SELECT * FROM orders ORDER BY id")).rows;
@@ -299,7 +304,11 @@ try {
   );
   assert.equal(profiles.find((p) => p.id === otherProfileId).description, null);
   assert.equal(profiles.find((p) => p.id === otherProfileId).category, "OTHER");
-  for (const name of [initialName, hybridName, reviewName]) {
+  const businessBeforeSessions = await snapshot(upgrade);
+  deploy(upgradeUrl, "add auth_sessions to existing three-migration business schema");
+  assert.equal(await snapshot(upgrade), businessBeforeSessions, "Auth migration changed business rows/history");
+  assert.equal((await upgrade.query("SELECT count(*)::int AS count FROM auth_sessions")).rows[0].count, 0);
+  for (const name of [initialName, hybridName, reviewName, sessionName]) {
     const migration = (await upgrade.query("SELECT checksum FROM _prisma_migrations WHERE migration_name=$1 AND finished_at IS NOT NULL AND rolled_back_at IS NULL", [name])).rows;
     assert.equal(migration.length, 1);
     const hash = name === initialName ? initialHash : createHash("sha256").update(readFileSync(join(root, "prisma/migrations", name, "migration.sql"))).digest("hex");
@@ -327,7 +336,7 @@ try {
     "PASS 5 old orders/all old statuses, IDs, timestamps, descriptions and exact prices (0/1/max int cents) preserved",
   );
   console.log(
-    "PASS all three migration checksums match files; legacy nullable biography preserved",
+    "PASS all four migration checksums match files; legacy biography and all business data preserved",
   );
   console.log(
     "Migration verification complete. Dedicated databases retained for inspection; no reset/drop performed.",

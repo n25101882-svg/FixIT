@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import type { RequestHandler } from "express";
 import { z } from "zod";
 import { HttpError } from "../http-error.js";
+import { randomUUID } from "node:crypto";
 
 export const tokenIssuer = "fixit-api";
 export const tokenAudience = "fixit-web";
@@ -18,6 +19,7 @@ export function issueToken(userId: string, options: TokenOptions): string {
     expiresIn: options.tokenTtlSeconds,
     issuer: tokenIssuer,
     audience: tokenAudience,
+    jwtid: randomUUID(),
   });
 }
 

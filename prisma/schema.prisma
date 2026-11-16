@@ -54,8 +54,29 @@ model User {
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   masterProfile MasterProfile?
   orders        Order[]        @relation("ClientOrders")
+  authSessions  AuthSession[]
 
   @@map("users")
+}
+
+// Technical authentication state; the five business models remain unchanged.
+model AuthSession {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  tokenHash         String   @unique @map("token_hash") @db.Char(64)
+  previousTokenHash String?  @map("previous_token_hash") @db.Char(64)
+  generation        Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt        DateTime @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  expiresAt         DateTime @map("expires_at") @db.Timestamptz(3)
+  rotatedAt         DateTime? @map("rotated_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason     String?   @map("revoked_reason") @db.VarChar(16)
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
 }
 
 model MasterProfile {

@@ -10,17 +10,18 @@ const password = "Synthetic orders browser passphrase!";
 let a: { id: string; email: string; token: string }, b: typeof a, master: typeof a;
 async function account(request: APIRequestContext, name: string, role = "CLIENT") {
   const email = name + suffix;
-  const response = await request.post(`${backend}/auth/register`, { data: {
+  const response = await request.post(`${backend}/auth/register`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: {
     email, name: "Синтетичний користувач", password, passwordConfirmation: password, role,
     ...(role === "MASTER" ? { city: "Тестоград", category: "OTHER", profileDescription: "Синтетичний профіль", serviceTitle: "Синтетична послуга", serviceDescription: "Опис синтетичної послуги" } : {}),
   } });
   expect(response.status()).toBe(201);
   const user = (await response.json()).user;
-  const login = await request.post(`${backend}/auth/login`, { data: { email, password } });
+  const login = await request.post(`${backend}/auth/login`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password } });
   expect(login.status()).toBe(200);
   return { id: user.id as string, email, token: (await login.json()).accessToken as string };
 }
 async function login(page: Page, user: typeof a) {
+  await page.context().request.post(`${backend}/auth/logout`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: {} });
   await page.goto("/login");
   await page.getByLabel("Email", { exact: true }).fill(user.email);
   await page.getByLabel("Пароль", { exact: true }).fill(password);

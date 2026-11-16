@@ -22,7 +22,7 @@ function Session({ children }: { children: ReactNode }) {
 }
 function Location() { const location = useLocation(); return <span data-testid="location" hidden>{location.pathname + location.search}</span>; }
 function show(path = orderPath, authenticated = true) {
-  render(<MemoryRouter initialEntries={[path]}><AuthProvider>{authenticated ? <Session><App /><Location /></Session> : <><App /><Location /></>}</AuthProvider></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[path]}><AuthProvider recoverSession={false}>{authenticated ? <Session><App /><Location /></Session> : <><App /><Location /></>}</AuthProvider></MemoryRouter>);
 }
 async function fill() {
   await userEvent.type(await screen.findByLabelText("Опис проблеми"), order.description);

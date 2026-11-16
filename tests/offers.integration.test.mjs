@@ -20,7 +20,7 @@ async function account(name, role = "CLIENT", profile = {}) {
   const password = randomBytes(24).toString("hex");
   const body = { email: name + suffix, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
     ...(role === "MASTER" ? { city, category: "PLUMBING", profileDescription: "Synthetic profile", serviceTitle: "Synthetic service", serviceDescription: "Synthetic service description", ...profile } : {}) };
-  const result = await request(app).post("/api/v1/auth/register").send(body).expect(201);
+  const result = await request(app).post("/api/v1/auth/register").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send(body).expect(201);
   const user = result.body.user;
   return { ...user, token: issueToken(user.id, options), profile: await database.masterProfile.findUnique({ where: { userId: user.id } }) };
 }

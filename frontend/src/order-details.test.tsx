@@ -27,7 +27,7 @@ function Navigation() {
     <button onClick={() => navigate(`/orders/${otherId}`)}>Інша заявка</button><button onClick={() => navigate("/catalog")}>Залишити деталі</button></>;
 }
 function show(path = clientPath, authenticated = true) {
-  return render(<MemoryRouter initialEntries={[path]}><AuthProvider>{authenticated ? <Session><App /><Navigation /></Session> : <><App /><Navigation /></>}</AuthProvider></MemoryRouter>);
+  return render(<MemoryRouter initialEntries={[path]}><AuthProvider recoverSession={false}>{authenticated ? <Session><App /><Navigation /></Session> : <><App /><Navigation /></>}</AuthProvider></MemoryRouter>);
 }
 function deferred() { let resolve!: (value: Response) => void; const promise = new Promise<Response>((done) => { resolve = done; }); return { resolve, promise }; }
 afterEach(() => vi.unstubAllGlobals());

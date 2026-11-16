@@ -16,7 +16,7 @@ function Session({ children }: { children: ReactNode }) {
   return ready ? children : null;
 }
 function show(authenticated = true) {
-  render(<MemoryRouter initialEntries={["/orders"]}><AuthProvider>
+  render(<MemoryRouter initialEntries={["/orders"]}><AuthProvider recoverSession={false}>
     {authenticated ? <Session><App /></Session> : <App />}
   </AuthProvider></MemoryRouter>);
 }

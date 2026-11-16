@@ -1,28 +1,37 @@
 # FixIT — Hybrid MVP, послуги, замовлення та історія
 
-Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Поточна база US-09 — develop після PR #9 (`79861dd`). Збережені Hybrid database, Auth, CUSTOM/STANDARD orders, послуги/каталог, пропозиції/вибір виконавця та виконання робіт. Додано захищені деталі й безпечний timeline статусів для CLIENT та призначеного MASTER.
+Node.js 24 / npm 11, Express + TypeScript, PostgreSQL 18, Prisma 7.10.1; React + Vite + TypeScript. Поточна база FIX-17 — develop після PR #11 (`2887f5417c88914d07490f8debd9959c19862628`). Збережені Hybrid database, CUSTOM/STANDARD orders, послуги/каталог, пропозиції/вибір виконавця, виконання робіт і приватний timeline. Додано безпечне відновлення авторизації після F5 та single-origin production hosting.
 
-П’ять таблиць: users, master_profiles, services, orders, order_responses. Усі три застосовані SQL-міграції з develop збережені без змін. Грошові поля — decimal(10,2), зокрема nullable Service.priceEstimate (`price_estimate`); Float не використовується. [Специфікація](FIXIT_MVP_SPEC.md), [фізична DBML](docs/er-diagram.dbml), [звіт №6](docs/PRACTICAL_6.md), [звіт №7](docs/PRACTICAL_7.md), [звіт №9 і Windows/Network/PostgreSQL QA](docs/PRACTICAL_9.md).
+П’ять бізнес-таблиць: users, master_profiles, services, orders, order_responses; одна технічна auth_sessions. Три застосовані SQL-міграції з develop збережені без змін, четверта `20261116090000_add_auth_sessions` додає лише сесії. Грошові поля — decimal(10,2), зокрема nullable Service.priceEstimate (`price_estimate`); Float не використовується. [Специфікація](FIXIT_MVP_SPEC.md), [фізична DBML](docs/er-diagram.dbml), [звіт №6](docs/PRACTICAL_6.md), [звіт №7](docs/PRACTICAL_7.md), [звіт №9](docs/PRACTICAL_9.md). Нижче історичні результати попередніх PR позначають стан відповідного етапу.
 
 ## Що працює
 
 - POST `/api/v1/auth/register`: CLIENT → тільки User; MASTER → одна транзакція User + MasterProfile + перша Service. Валідація до запису, помилка будь-якого INSERT/commit → rollback, success лише після commit. Публічна ADMIN-реєстрація і mass assignment заборонені.
-- POST `/api/v1/auth/login`: salted scrypt password verification і короткоживучий HS256 JWT; secret тільки з environment.
+- POST `/api/v1/auth/login`: salted scrypt password verification, 15-хвилинний HS256 JWT у пам’яті React та HttpOnly refresh-cookie; secret тільки з environment.
+- POST `/api/v1/auth/refresh`, `/api/v1/auth/logout`: атомарна ротація/відкликання PostgreSQL refresh-сесії, CSRF Origin/header, 7 днів absolute / 24 години idle; refresh-токен ніколи не повертається в JSON.
 - GET `/api/v1/users/me`: JWT-захист, лише id/email/name/role; missing/invalid/expired → 401. Точні CORS origins, JSON size limit і auth rate limiting збережені.
-- React `/register`, `/login`, protected `/dashboard`, повідомлення про помилки і logout. MASTER-поля показуються лише для MASTER; CLIENT їх не надсилає. Token лише в пам’яті; refresh потребує повторного входу.
+- React `/register`, `/login`, protected `/dashboard`, повідомлення про помилки і logout. MASTER-поля показуються лише для MASTER; CLIENT їх не надсилає. Bootstrap відновлює JWT після F5 без передчасного redirect; токенів у Web Storage немає.
 - Захищені CLIENT GET/POST `/api/v1/orders`, DELETE `/api/v1/orders/:id`: власний список, CUSTOM OPEN, логічне CANCELLED через наявний сервіс; скасовані записи/історія збережені. React `/orders` відкривається з кабінету, оновлює список без reload і показує Loading/Empty/Error/Success.
 - US-06/US-07: MASTER `/master/orders` показує OPEN CUSTOM за профільним містом/категорією і приймає текстову пропозицію; CLIENT `/orders` читає свої пропозиції й обирає одного виконавця. Кабінет MASTER показує призначені CUSTOM та поточні статуси, включно з кінцевими. [API, перевірки та Windows QA](docs/US_06_07.md).
 - US-08 (CUSTOM, FIX-8) / частина US-09 (FIX-9): призначений MASTER починає та завершує роботу з кабінету через PATCH `/api/v1/master/orders/:id/status`. CLIENT після «Оновити» бачить «У роботі» / «Завершена»; скасування після початку заборонене сервером. Дата завершення — з реальної DB-події, без нової колонки. [Звіт і Windows QA](docs/US_08.md).
 - US-09 / FIX-9: CLIENT `/orders/:id`, MASTER `/master/orders/:id`, посилання з власних карток. Відповідні GET `/api/v1/orders/:id` і `/api/v1/master/orders/:id` читають тільки дозволений ресурс; foreign/missing — однаковий 404. Timeline не містить raw actor IDs, legacy/missing times не вигадуються. Direct URL після login відновлюється через allowlist; JWT лишається in-memory. [Архітектура, перевірки, Windows QA для TestClient/TestMaster1/TestMaster2](docs/US_09_ORDER_DETAILS.md).
 - `/health`, `/health/ready` та чинна транзакційна логіка `src/orders/service.ts` збережені. Reviews, ADMIN UI, платежі та чат не додаються.
 
+## FIX-17 — результати PR #12
+
+У Codex Cloud фактично пройшли **651 backend / 287 frontend / 43 Chromium E2E** (baseline 587/255/33 збережено), `npm ci --include=dev`, `release:verify` і clean/upgrade `test:migrations`. Coverage 12 модулів: **97.02 / 90.08 / 97.94 / 99.43%** (Statements / Branches / Functions / Lines), per-file gates 71% не знижено. Typecheck, production build, Prisma/ER/DB та локальний deployment validator — PASS.
+
+Production — один Node Web Service з React/API і окрема PG18. Refresh-cookie `__Host-`, Secure/HttpOnly/Lax/Path=/ без Domain; атомарна ротація й replay detection. Конкурентний старий verifier отримує 409 без credentials, пізній replay відкликає лише свою сесію. Access JWT лишається stateless і може діяти до кінця 15-хвилинного TTL після Logout. Втрачена відповідь ротації може вимагати повторного входу; offline Logout зберігає лише не-секретний cookie-маркер наміру до серверного підтвердження.
+
+[Архітектура, точні перевірки, SQL-обмеження й security review](docs/FIX_17_REFRESH_SESSIONS.md) · [майбутній Windows QA](docs/WINDOWS_SESSION_QA.md). Власнику не потрібно ручне QA для створення PR: усі автоматизовані перевірки виконані в Cloud на нових *_test БД. Windows і реальний Render — NOT RUN; live Render schema — BLOCKED proxy CONNECT403. Наявні fixit_dev/fixit_test/fixit_shadow не використовувалися й не змінювалися. Merge/deployment/Jira/release не виконуються.
+
 ## Windows / PowerShell
 
 Для підготовки релізу після PR #10 див. [Render deployment/rollback](docs/DEPLOYMENT_RENDER.md), [release checklist та ST1–ST5](docs/RELEASE_CHECKLIST.md), [фактичні результати й security findings](docs/RELEASE_PREPARATION.md), [порожній шаблон практичної №11](docs/PRACTICAL_11_RESULTS_TEMPLATE.md).
 
-`npm run release:verify` відтворює локальні перевірки лише на явно налаштованій окремій loopback *_test БД, відмовляється від fixit_test/fixit_shadow та не запускає cloud deployment. `npm run deploy:validate` перевіряє локальні інваріанти render.yaml (JSON-синтаксис YAML), а не live Render schema. Blueprint використовує free/default-free плани, вимкнений autodeploy, private DB binding, generated JWT secret та SPA rewrite; actual domains задаються вручну. Не застосовуйте Blueprint без окремого схвалення — initial Apply може одразу створити ресурси й почати deploy.
+`npm run release:verify` відтворює локальні перевірки лише на явно налаштованій окремій loopback *_test БД, відмовляється від fixit_test/fixit_shadow та не запускає cloud deployment. `npm run deploy:validate` перевіряє локальні інваріанти render.yaml, а не live Render schema. Blueprint має один free Node service і free PG18, autodeploy off, private DB binding, generated JWT secret, SERVE_FRONTEND=1 та VITE_API_URL=/api/v1. Dashboard Blueprint auto-sync також має бути вимкнений оператором; це тут не перевірялося. Не застосовуйте Blueprint без окремого схвалення — initial Apply може одразу почати deploy.
 
-Feature Freeze/release/v1.0.0 очікують FIX-17 decision, QA й review відомого idempotency-ризику. Production-only npm audit: 0; full tree: 19 dev advisories, які також лишаються на хості через Prisma CLI-at-start. Залежності/покриття не знижено; PostgreSQL schema, migrations, JWT і бізнес-модулі не змінено.
+Feature Freeze/release/v1.0.0 очікують code/security review FIX-17, решту QA й рішення щодо idempotency-ризику. Архітектурне рішення FIX-17 надав власник, реалізацію перевірено в Cloud. Production-only npm audit: 0; full tree: 19 dev advisories, які лишаються на хості через Prisma CLI-at-start. Залежності/lockfile, три старі міграції та бізнес-модулі незмінні.
 
 Потрібні Git, Node 24/npm 11, PostgreSQL 18 і psql у PATH. Використовуйте окремі локальні *_test БД; fixit_dev/production не використовувати для тестів/seed. Жодного Docker/WSL/домашньої мережі для Cloud не потрібно.
 
@@ -32,18 +41,17 @@ Feature Freeze/release/v1.0.0 очікують FIX-17 decision, QA й review в�
 -- Тільки якщо роль відсутня:
 CREATE ROLE fixit_test LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
 \password fixit_test
-CREATE DATABASE fixit_orders_test OWNER fixit_test;
-CREATE DATABASE fixit_shadow OWNER fixit_test;
+CREATE DATABASE fixit_sessions_windows_test OWNER fixit_test;
 -- Дві окремі НОВІ ПОРОЖНІ *_test БД тільки для test:migrations:
-CREATE DATABASE fixit_orders_clean_test OWNER fixit_test;
-CREATE DATABASE fixit_orders_upgrade_test OWNER fixit_test;
+CREATE DATABASE fixit_sessions_windows_clean_test OWNER fixit_test;
+CREATE DATABASE fixit_sessions_windows_upgrade_test OWNER fixit_test;
 ```
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-У приватному .env задайте власний percent-encoded пароль локальної ролі, DATABASE_URL/TEST_DATABASE_URL для fixit_orders_test, SHADOW_DATABASE_URL для окремої fixit_shadow. Схема — public. Для test:migrations задайте CLEAN_DATABASE_URL і UPGRADE_DATABASE_URL двох порожніх БД вище, відмінних від головної. Не публікуйте .env, паролі чи реальні URL.
+У приватному .env задайте власний percent-encoded пароль локальної ролі, DATABASE_URL/TEST_DATABASE_URL для нової fixit_sessions_windows_test. Схема — public. Для migrate deploy shadow не потрібна; існуючу fixit_shadow не використовувати. Для test:migrations задайте CLEAN_DATABASE_URL і UPGRADE_DATABASE_URL двох порожніх БД вище, відмінних від головної. Не публікуйте .env, паролі чи реальні URL.
 
 Згенеруйте випадковий JWT_SECRET локально і перенесіть значення **тільки** у приватний .env:
 
@@ -54,7 +62,7 @@ node -e "console.log(require('node:crypto').randomBytes(48).toString('hex'))"
 Не знімайте цей вивід для звіту. JWT_SECRET має бути мінімум 32 bytes, JWT_TTL_SECONDS типово 900. Після налаштування:
 
 ```powershell
-npm ci
+npm ci --include=dev
 npm run db:generate
 npm run db:validate
 npm run db:migrate
@@ -69,6 +77,7 @@ npm test
 npm run build
 npm run frontend:build
 npm run frontend:test
+npm run frontend:coverage
 npm run test:migrations
 ```
 
@@ -87,7 +96,7 @@ npm run dev
 npm run frontend:dev
 ```
 
-Backend: **http://127.0.0.1:3000**, frontend: **http://127.0.0.1:5173**. VITE_API_URL типово http://127.0.0.1:3000/api/v1; root CORS_ORIGINS містить точні http://127.0.0.1:5173 і http://localhost:5173. Optional frontend/.env створюйте з frontend/.env.example; жодних JWT_SECRET/DATABASE_URL у VITE_*.
+Backend: **http://127.0.0.1:3000**, frontend: **http://127.0.0.1:5173**. Для cookie використовуйте один hostname з обох боків, не змішуйте localhost і 127.0.0.1. VITE_API_URL у Vite dev типово http://127.0.0.1:3000/api/v1; root CORS_ORIGINS містить точні loopback origins. SERVE_FRONTEND=0 для dev, production single-origin build — відносний /api/v1. Optional frontend/.env створюйте з frontend/.env.example; жодних JWT_SECRET/DATABASE_URL у VITE_*.
 
 Для Playwright використайте Chromium поточного runner:
 
@@ -96,7 +105,7 @@ npm exec playwright install chromium
 npm run test:e2e
 ```
 
-На Windows не задавайте Linux PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH. E2E запускає власні сервери на **4100/5174** із випадковим environment secret; це окремі test ports, а не звичайні 3000/5173. Використовується явний локальний TEST_DATABASE_URL; існуючі сервери не перевикористовуються. Trace/video/screenshots вимкнені, test-results і playwright-report ігноруються Git. Windows/Postman QA тут **документована, не виконана**.
+На Windows не задавайте Linux PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH. E2E запускає власні сервери на **4100/5174** і production single-origin **4200** із випадковим environment secret. Використовується явний локальний TEST_DATABASE_URL; існуючі сервери не перевикористовуються. Trace/video/screenshots вимкнені, test-results і playwright-report ігноруються Git. Windows/Postman QA тут **документована, не виконана**.
 
 ## Codex Cloud
 
@@ -105,23 +114,15 @@ Cloud має власний локальний PostgreSQL кластер, нез
 ```bash
 cd /workspace/FixIT
 bash /workspace/.fixit-dev/bin/pg.sh start
-source /workspace/.fixit-dev/orders-env.sh
+source /workspace/.fixit-dev/sessions-env.sh
 unset PRISMA_SCHEMA_ENGINE_BINARY PRISMA_MIGRATION_ENGINE_BINARY
-npm ci
-npm run db:generate
-npm run db:validate
-npm run db:migrate
-npm run db:status
-npm run typecheck
-npm run er:validate
-npm test
-npm run frontend:build
-npm run frontend:test
-npm run test:e2e
-npm run test:migrations
+npm ci --include=dev
+npm run release:verify
+# test:migrations already passed on this task's clean/upgrade pair.
+# Provision a NEW EMPTY pair and update private bindings before repeating it.
 ```
 
-orders-env.sh — приватний helper цієї машини поза Git; використовує попередні приватні helpers і задає нові fixit_orders*_test БД на 127.0.0.1:55432 й установлену /usr/bin/chromium. На іншій машині налаштуйте власні дозволені TEST/DATABASE/SHADOW bindings та Chromium; автоматичного відновлення helper не заявляємо. У цьому helper немає production-секретів. Для ручного dev додатково задайте JWT_SECRET через захищене environment або приватний .env; E2E генерує власний випадковий secret.
+sessions-env.sh — приватний helper цієї машини поза Git; задає нову fixit_sessions_final_test на 127.0.0.1:55432 й доступний Chromium. На іншій машині налаштуйте власні дозволені нові TEST/DATABASE bindings та Chromium. У helper немає production-секретів. Для ручного dev додатково задайте JWT_SECRET через захищене environment або приватний .env; E2E генерує власний випадковий secret.
 
 Prisma працює зі штатним engine, TLS/checksum verification не вимикаються, Rust compilation/override не потрібні. URL задається у prisma.config.ts. Для migrate dev потрібна окрема shadow database. Використовуйте migrate deploy, не db push/reset; для робочих даних потрібні окрема перевірка/backup. Backend startup не виконує seed/міграцій, перевіряє SQL-з’єднання перед listen; SIGINT/SIGTERM закриває пул.
 

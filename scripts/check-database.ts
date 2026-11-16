@@ -19,7 +19,7 @@ async function main() {
     `;
     assert.deepEqual(
       tables.map((row) => row.table_name),
-      ["master_profiles", "order_responses", "orders", "services", "users"],
+      ["auth_sessions", "master_profiles", "order_responses", "orders", "services", "users"],
     );
     const migrations = await database.$queryRaw<{ migration_name: string }[]>`
       SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name
@@ -28,9 +28,10 @@ async function main() {
       "20261109200000_init_database_schema",
       "20261114130000_hybrid_mvp",
       "20261114150000_review_snapshot_alignment",
+      "20261116090000_add_auth_sessions",
     ]) assert.ok(migrations.some((row) => row.migration_name === name), `Missing migration: ${name}`);
     console.log(
-      "Hybrid schema OK: five business tables and all three applied migrations.",
+      "Schema OK: five business tables + auth_sessions; all four applied migrations.",
     );
   } finally {
     await database.$disconnect();

@@ -20,8 +20,8 @@ let a, b, master;
 async function register(name, role = "CLIENT") {
   const body = { email: name + suffix, name: "Синтетичний користувач", password, passwordConfirmation: password, role,
     ...(role === "MASTER" ? { city: "Тестоград", category: "PLUMBING", profileDescription: "Синтетичний профіль", serviceTitle: "Синтетична послуга", serviceDescription: "Опис синтетичної послуги" } : {}) };
-  const created = await request(app).post("/api/v1/auth/register").send(body).expect(201);
-  const login = await request(app).post("/api/v1/auth/login").send({ email: body.email, password }).expect(200);
+  const created = await request(app).post("/api/v1/auth/register").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send(body).expect(201);
+  const login = await request(app).post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send({ email: body.email, password }).expect(200);
   return { ...created.body.user, token: login.body.accessToken };
 }
 const get = (actor) => request(app).get("/api/v1/orders").set("Authorization", `Bearer ${actor.token}`);

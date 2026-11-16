@@ -19,7 +19,7 @@ function Session({ children }: { children: ReactNode }) {
   return ready ? children : null;
 }
 function show(path = "/dashboard") {
-  render(<MemoryRouter initialEntries={[path]}><AuthProvider><Session><App /></Session></AuthProvider></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[path]}><AuthProvider recoverSession={false}><Session><App /></Session></AuthProvider></MemoryRouter>);
 }
 function setup(orders: unknown[] = [order]) {
   const mock = vi.fn().mockResolvedValueOnce(json({ user })).mockResolvedValueOnce(json({ orders }));

@@ -19,7 +19,7 @@ function Session({ children }: { children: ReactNode }) {
   return ready ? children : null;
 }
 function show(path = "/orders", authenticated = true) {
-  render(<MemoryRouter initialEntries={[path]}><AuthProvider>{authenticated ? <Session><App /></Session> : <App />}</AuthProvider></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[path]}><AuthProvider recoverSession={false}>{authenticated ? <Session><App /></Session> : <App />}</AuthProvider></MemoryRouter>);
 }
 async function openOffers() {
   await userEvent.click(await screen.findByRole("button", { name: "Переглянути пропозиції" }));

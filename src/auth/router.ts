@@ -5,11 +5,14 @@ import { Category, type PrismaClient } from "../generated/prisma/client.js";
 import { HttpError } from "../http-error.js";
 import { dummyPasswordHash, hashPassword, verifyPassword } from "./password.js";
 import { authenticate, issueToken, type TokenOptions } from "./token.js";
+import { createSessionService } from "./sessions.js";
+import { sessionCookies } from "./cookies.js";
 
 export interface AuthOptions extends TokenOptions {
   database: PrismaClient;
   corsOrigins: string[];
   rateLimit?: { limit: number; windowMs: number };
+  sessions?: { secure?: boolean; clock?: () => Date; refreshLimit?: number };
 }
 
 const publicUser = { id: true, email: true, name: true, role: true } as const;
@@ -79,6 +82,42 @@ function parse<T>(schema: z.ZodType<T>, body: unknown): T {
 
 export function authRouter(options: AuthOptions) {
   const router = Router();
+  const sessions = createSessionService(options.database, options.jwtSecret, options.sessions?.clock);
+  const cookies = sessionCookies(options.sessions?.secure);
+  router.use(["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"], (request, _response, next) => {
+    if (request.method === "POST") {
+      if (!request.headers.origin || !options.corsOrigins.includes(request.headers.origin)
+        || request.get("X-FixIT-CSRF") !== "1" || !request.is("application/json") || request.get("Sec-Fetch-Site") === "cross-site")
+        throw new HttpError(403, "CSRF_REJECTED", "Джерело запиту не підтверджено.");
+      cookies.guard(request);
+    }
+    next();
+  });
+  const refreshLimiter = rateLimit({ windowMs: 60000, limit: options.sessions?.refreshLimit ?? 60,
+    keyGenerator: (_request, response) => response.locals.refreshId as string,
+    standardHeaders: "draft-8", legacyHeaders: false,
+    message: { error: { code: "REFRESH_RATE_LIMITED", message: "Зачекайте перед повторним оновленням сесії." } } });
+  const invalidRefreshLimiter = rateLimit({ windowMs: 60000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false });
+  router.post("/auth/refresh", (request, response, next) => {
+    parse(z.object({}).strict(), request.body); parse(z.object({}).strict(), request.query);
+    const id = sessions.identify(cookies.read(request));
+    if (!id) return invalidRefreshLimiter(request, response, () => next(new HttpError(401, "UNAUTHORIZED", "Сесію не вдалося відновити.")));
+    response.locals.refreshId = id; next();
+  }, refreshLimiter, async (request, response) => {
+    const result = await sessions.rotate(cookies.read(request));
+    if (result.kind === "conflict") {
+      response.setHeader("Retry-After", "1");
+      throw new HttpError(409, "REFRESH_CONFLICT", "Інший запит уже оновлює сесію. Повторіть перевірку.");
+    }
+    if (result.kind !== "ok") throw new HttpError(401, "UNAUTHORIZED", "Сесію не вдалося відновити.");
+    cookies.set(response, result.token, result.expiresAt);
+    response.json({ accessToken: issueToken(result.user.id, options), tokenType: "Bearer", expiresIn: options.tokenTtlSeconds, user: result.user });
+  });
+  router.post("/auth/logout", async (request, response) => {
+    parse(z.object({}).strict(), request.body); parse(z.object({}).strict(), request.query);
+    await sessions.revoke(cookies.read(request));
+    cookies.clear(response); response.status(204).end();
+  });
   const unknownAccountHash = dummyPasswordHash();
   const limiter = rateLimit({
     windowMs: options.rateLimit?.windowMs ?? 15 * 60 * 1000,
@@ -165,6 +204,8 @@ export function authRouter(options: AuthOptions) {
         "INVALID_CREDENTIALS",
         "Неправильний email або пароль.",
       );
+    const session = await sessions.create(user.id, cookies.read(request));
+    cookies.set(response, session.token, session.expiresAt);
     response.json({
       accessToken: issueToken(user.id, options),
       tokenType: "Bearer",

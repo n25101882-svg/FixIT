@@ -13,13 +13,14 @@ let client: Account, master: Account;
 const headers = (user: Account) => ({ Authorization: `Bearer ${user.token}` });
 async function account(request: APIRequestContext, name: string, role: "CLIENT" | "MASTER"): Promise<Account> {
   const email = name + suffix;
-  const result = await request.post(`${backend}/auth/register`, { data: { email, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
+  const result = await request.post(`${backend}/auth/register`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
     ...(role === "MASTER" ? { city, category: "OTHER", profileDescription: "Synthetic profile", serviceTitle: "Synthetic service", serviceDescription: "Synthetic description" } : {}) } });
   expect(result.status()).toBe(201);
-  const login = await request.post(`${backend}/auth/login`, { data: { email, password } }); expect(login.status()).toBe(200);
+  const login = await request.post(`${backend}/auth/login`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password } }); expect(login.status()).toBe(200);
   return { id: (await result.json()).user.id, email, token: (await login.json()).accessToken };
 }
 async function login(page: Page, actor: Account) {
+  await page.context().request.post(`${backend}/auth/logout`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: {} });
   await page.goto("/login"); await page.getByLabel("Email", { exact: true }).fill(actor.email);
   await page.getByLabel("Пароль", { exact: true }).fill(password); await page.getByRole("button", { name: "Увійти", exact: true }).click();
   await expect(page.getByText(actor.email, { exact: true })).toBeVisible();

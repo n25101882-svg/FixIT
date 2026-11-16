@@ -1,6 +1,6 @@
 Project FixIT {
   database_type: 'PostgreSQL'
-  Note: 'Hybrid MVP 1.0: five tables. Prices are exact UAH decimal(10,2). SQL triggers enforce initial states, transitions, immutable snapshots, history and offer eligibility. User ADMIN/is_approved are retained internal legacy compatibility, not public features.'
+  Note: 'Hybrid MVP 1.0: five business tables plus technical auth_sessions. Prices are exact UAH decimal(10,2). SQL triggers enforce initial states, transitions, immutable snapshots, history and offer eligibility. User ADMIN/is_approved are retained internal legacy compatibility, not public features.'
 }
 Enum user_role {
   ADMIN
@@ -118,3 +118,29 @@ Ref orders_service_id_master_profile_id_fkey: orders.(service_id, master_profile
 Ref orders_master_profile_id_fkey: orders.master_profile_id > master_profiles.id [delete: restrict, update: restrict]
 Ref order_responses_order_id_fkey: order_responses.order_id > orders.id [delete: restrict, update: restrict]
 Ref order_responses_master_profile_id_fkey: order_responses.master_profile_id > master_profiles.id [delete: restrict, update: restrict]
+
+Table auth_sessions {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+  token_hash character(64) [not null, unique, note: 'SHA-256 of high-entropy opaque token; never plaintext']
+  previous_token_hash character(64)
+  generation integer [not null, default: 0]
+  created_at timestamptz(3) [not null, default: `now()`]
+  last_used_at timestamptz(3) [not null, default: `now()`]
+  expires_at timestamptz(3) [not null, note: 'Absolute 7-day deadline; never extended']
+  rotated_at timestamptz(3)
+  revoked_at timestamptz(3)
+  revoked_reason varchar(16)
+  indexes {
+    (user_id, revoked_at) [name: 'auth_sessions_user_id_revoked_at_idx']
+    expires_at [name: 'auth_sessions_expires_at_idx']
+  }
+  checks {
+    `token_hash ~ '^[0-9a-f]{64}$' AND (previous_token_hash IS NULL OR previous_token_hash ~ '^[0-9a-f]{64}$')` [name: 'auth_sessions_hash_check']
+    `generation >= 0 AND ((generation = 0 AND previous_token_hash IS NULL AND rotated_at IS NULL) OR (generation > 0 AND previous_token_hash IS NOT NULL AND rotated_at IS NOT NULL))` [name: 'auth_sessions_generation_check']
+    `expires_at > created_at AND last_used_at >= created_at AND last_used_at < expires_at AND (rotated_at IS NULL OR (rotated_at >= created_at AND rotated_at = last_used_at)) AND (revoked_at IS NULL OR revoked_at >= created_at)` [name: 'auth_sessions_time_check']
+    `(revoked_at IS NULL AND revoked_reason IS NULL) OR (revoked_at IS NOT NULL AND revoked_reason IS NOT NULL AND revoked_reason IN ('logout','replay','expired'))` [name: 'auth_sessions_revocation_check']
+  }
+  Note: 'Technical auth state only. SQL CHECK enforces hashes, generation/previous-hash pairing, timestamps and revocation state. Refresh idle limit 24h; 2s duplicate window returns no credentials.'
+}
+Ref auth_sessions_user_id_fkey: auth_sessions.user_id > users.id [delete: cascade, update: cascade]

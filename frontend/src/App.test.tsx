@@ -19,7 +19,7 @@ const json = (body: unknown, status = 200) =>
 function renderApp(path = "/login") {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AuthProvider>
+      <AuthProvider recoverSession={false}>
         <App />
       </AuthProvider>
     </MemoryRouter>,

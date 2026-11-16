@@ -19,7 +19,7 @@ const master = (name) => ({
   profileDescription: "  Синтетичний опис майстра  ", serviceTitle: "  Перша синтетична послуга  ",
   serviceDescription: "  Синтетичний опис першої послуги  ",
 });
-const register = (body) => request(app).post("/api/v1/auth/register").send(body);
+const register = (body) => request(app).post("/api/v1/auth/register").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send(body);
 const counts = () => Promise.all([database.user.count(), database.masterProfile.count(), database.service.count()]);
 const account = (email) => database.user.findUniqueOrThrow({
   where: { email: email.trim().toLowerCase() }, include: { masterProfile: { include: { services: true } } },
@@ -52,7 +52,7 @@ describe("FIX-1 endpoint with real Hybrid persistence", () => {
       description: input.serviceDescription.trim(), priceEstimate: null, isActive: true,
     });
     expect(JSON.stringify(response.body)).not.toContain("passwordHash");
-    const login = await request(app).post("/api/v1/auth/login").send({ email: input.email, password }).expect(200);
+    const login = await request(app).post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send({ email: input.email, password }).expect(200);
     expect(login.body.accessToken).toEqual(expect.any(String));
     const me = await request(app).get("/api/v1/users/me").set("Authorization", `Bearer ${login.body.accessToken}`).expect(200);
     expect(me.body).toEqual({ user: response.body.user });
@@ -87,7 +87,7 @@ describe("FIX-1 endpoint with real Hybrid persistence", () => {
       expect(JSON.stringify(response.body)).not.toMatch(/accessToken|password|INSERT|constraint|stack/i);
       expect(await counts()).toEqual(before);
       expect(await database.user.findUnique({ where: { email: input.email } })).toBeNull();
-      await request(app).post("/api/v1/auth/login").send({ email: input.email, password }).expect(401);
+      await request(app).post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send({ email: input.email, password }).expect(401);
     } finally {
       await database.$executeRawUnsafe(`ALTER TABLE services DROP CONSTRAINT "${constraint}"`);
     }

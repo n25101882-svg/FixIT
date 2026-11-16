@@ -14,9 +14,9 @@ async function login(page: Page) {
 }
 test.describe("@catalog real MASTER services and public discovery", () => {
   test.beforeAll(async ({ request }) => {
-    const created = await request.post(`${backend}/auth/register`, { data: { email, password, passwordConfirmation: password, name: "Synthetic catalog master", role: "MASTER", city, category: "TECH_REPAIR", profileDescription: "Synthetic public profile", serviceTitle: "Synthetic initial service", serviceDescription: "Initial synthetic description" } });
+    const created = await request.post(`${backend}/auth/register`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password, passwordConfirmation: password, name: "Synthetic catalog master", role: "MASTER", city, category: "TECH_REPAIR", profileDescription: "Synthetic public profile", serviceTitle: "Synthetic initial service", serviceDescription: "Initial synthetic description" } });
     expect(created.status()).toBe(201); ownerId = (await created.json()).user.id;
-    const loggedIn = await request.post(`${backend}/auth/login`, { data: { email, password } }); expect(loggedIn.status()).toBe(200); token = (await loggedIn.json()).accessToken;
+    const loggedIn = await request.post(`${backend}/auth/login`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password } }); expect(loggedIn.status()).toBe(200); token = (await loggedIn.json()).accessToken;
     profileId = (await database.masterProfile.findUniqueOrThrow({ where: { userId: ownerId } })).id;
   });
   test.afterAll(async () => {

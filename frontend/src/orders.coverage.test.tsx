@@ -21,7 +21,7 @@ function Session({ children }: { children: ReactNode }) {
   return ready ? children : null;
 }
 function show() {
-  render(<MemoryRouter initialEntries={["/orders"]}><AuthProvider><Session><App /></Session></AuthProvider></MemoryRouter>);
+  render(<MemoryRouter initialEntries={["/orders"]}><AuthProvider recoverSession={false}><Session><App /></Session></AuthProvider></MemoryRouter>);
 }
 const labels = { title: "Назва проблеми", description: "Опис проблеми", city: "Місто", category: "Категорія", budget: /Бюджет, грн/ };
 async function fill(except?: string) {

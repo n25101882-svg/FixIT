@@ -9,11 +9,11 @@ const email = `${randomUUID()}@orders-review-browser.fixit.test`;
 const password = "Synthetic review browser passphrase!";
 let token: string;
 test.beforeAll(async ({ request }) => {
-  const registered = await request.post(`${backend}/auth/register`, { data: {
+  const registered = await request.post(`${backend}/auth/register`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: {
     email, name: "Синтетичний review-клієнт", role: "CLIENT", password, passwordConfirmation: password,
   } });
   expect(registered.status()).toBe(201);
-  const login = await request.post(`${backend}/auth/login`, { data: { email, password } });
+  const login = await request.post(`${backend}/auth/login`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password } });
   expect(login.status()).toBe(200);
   token = (await login.json()).accessToken;
 });

@@ -3,7 +3,7 @@
     {
       "type": "web",
       "runtime": "node",
-      "name": "fixit-api",
+      "name": "fixit-web",
       "repo": "https://github.com/n25101882-svg/FixIT",
       "branch": "develop",
       "region": "frankfurt",
@@ -13,34 +13,49 @@
       "startCommand": "npm run deploy:start",
       "healthCheckPath": "/health/ready",
       "envVars": [
-        { "key": "NODE_VERSION", "value": "24.22.1" },
-        { "key": "NODE_ENV", "value": "production" },
-        { "key": "HOST", "value": "0.0.0.0" },
-        { "key": "TRUST_PROXY_HOPS", "value": "1" },
-        { "key": "JWT_TTL_SECONDS", "value": "900" },
-        { "key": "JWT_SECRET", "generateValue": true },
-        { "key": "CORS_ORIGINS", "sync": false },
-        { "key": "DATABASE_URL", "fromDatabase": { "name": "fixit-postgres", "property": "connectionString" } }
-      ]
-    },
-    {
-      "type": "web",
-      "runtime": "static",
-      "name": "fixit-web",
-      "repo": "https://github.com/n25101882-svg/FixIT",
-      "branch": "develop",
-      "autoDeployTrigger": "off",
-      "buildCommand": "npm ci --include=dev && npm run deploy:build:frontend",
-      "staticPublishPath": "frontend/dist",
-      "envVars": [
-        { "key": "NODE_VERSION", "value": "24.22.1" },
-        { "key": "VITE_API_URL", "sync": false }
-      ],
-      "routes": [ { "type": "rewrite", "source": "/*", "destination": "/index.html" } ],
-      "headers": [
-        { "path": "/*", "name": "X-Content-Type-Options", "value": "nosniff" },
-        { "path": "/*", "name": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "path": "/*", "name": "X-Frame-Options", "value": "DENY" }
+        {
+          "key": "NODE_VERSION",
+          "value": "24.22.1"
+        },
+        {
+          "key": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "key": "HOST",
+          "value": "0.0.0.0"
+        },
+        {
+          "key": "TRUST_PROXY_HOPS",
+          "value": "1"
+        },
+        {
+          "key": "JWT_TTL_SECONDS",
+          "value": "900"
+        },
+        {
+          "key": "JWT_SECRET",
+          "generateValue": true
+        },
+        {
+          "key": "CORS_ORIGINS",
+          "sync": false
+        },
+        {
+          "key": "DATABASE_URL",
+          "fromDatabase": {
+            "name": "fixit-postgres",
+            "property": "connectionString"
+          }
+        },
+        {
+          "key": "SERVE_FRONTEND",
+          "value": "1"
+        },
+        {
+          "key": "VITE_API_URL",
+          "value": "/api/v1"
+        }
       ]
     }
   ],
