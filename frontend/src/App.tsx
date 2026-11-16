@@ -8,8 +8,8 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { api, ApiError, type LoginResponse, type RegistrationRequest, type ServiceCategory, type User } from "./api";
-import { useAuth } from "./auth";
+import { api, ApiError, type RegistrationRequest, type ServiceCategory, type User } from "./api";
+import { useAuth, SessionRecovery } from "./auth";
 import "./styles.css";
 import { OrdersPage } from "./orders";
 import { AssignedOrders, MasterOrdersPage } from "./master-orders";
@@ -105,10 +105,11 @@ function Layout() {
 }
 
 function ProtectedRoute() {
-  const { token, sessionExpired } = useAuth();
+  const { token, sessionExpired, status, user } = useAuth();
   const location = useLocation();
+  if (status === "bootstrapping" || status === "unavailable") return <SessionRecovery />;
   return token ? (
-    <Outlet />
+    <Outlet key={user?.id ?? "injected-session"} />
   ) : (
     <Navigate to={standardAuthPath("/login", safeOrderReturn(location.pathname))} replace state={{ expired: sessionExpired }} />
   );
@@ -116,7 +117,7 @@ function ProtectedRoute() {
 
 function AuthPage({ mode }: { mode: "login" | "register" }) {
   const registration = mode === "register";
-  const { token, login } = useAuth();
+  const { token, signIn, status } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = safeOrderReturn(new URLSearchParams(location.search).get("returnTo"));
@@ -124,6 +125,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
   const [error, setError] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [role, setRole] = useState<"CLIENT" | "MASTER">("CLIENT");
+  if (status === "bootstrapping" || status === "unavailable") return <SessionRecovery />;
   if (token) return <Navigate to={returnTo ?? "/dashboard"} replace />;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -164,11 +166,7 @@ function AuthPage({ mode }: { mode: "login" | "register" }) {
           state: { registered: true, email },
         });
       } else {
-        const result = await api<LoginResponse>("/auth/login", {
-          method: "POST",
-          body: { email, password },
-        });
-        login(result.accessToken);
+        await signIn({ email, password });
         navigate(returnTo ?? "/dashboard", { replace: true });
       }
     } catch (cause) {

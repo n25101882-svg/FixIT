@@ -9,12 +9,13 @@ const city = `Місто ${randomUUID().slice(0, 8)}`; const password = "Synthet
 type Account = { id: string; email: string; token: string }; let client: Account, master: Account, profileId: string;
 const headers = (actor: Account) => ({ Authorization: `Bearer ${actor.token}` });
 async function account(request: APIRequestContext, name: string, role: "CLIENT" | "MASTER"): Promise<Account> {
-  const email = name + suffix; const response = await request.post(`${backend}/auth/register`, { data: { email, password, passwordConfirmation: password, name: `Synthetic ${name}`, role,
+  const email = name + suffix; const response = await request.post(`${backend}/auth/register`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password, passwordConfirmation: password, name: `Synthetic ${name}`, role,
     ...(role === "MASTER" ? { city, category: "TECH_REPAIR", profileDescription: "Synthetic profile", serviceTitle: "Synthetic initial service", serviceDescription: "Synthetic initial description" } : {}) } });
-  expect(response.status()).toBe(201); const login = await request.post(`${backend}/auth/login`, { data: { email, password } }); expect(login.status()).toBe(200);
+  expect(response.status()).toBe(201); const login = await request.post(`${backend}/auth/login`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password } }); expect(login.status()).toBe(200);
   return { id: (await response.json()).user.id, email, token: (await login.json()).accessToken };
 }
 async function login(page: Page, actor: Account, inPlace = false) {
+  await page.context().request.post(`${backend}/auth/logout`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: {} });
   if (!inPlace) await page.goto("/login");
   await page.getByLabel("Email", { exact: true }).fill(actor.email); await page.getByLabel("Пароль", { exact: true }).fill(password);
   const loggedIn = page.waitForResponse((response) => response.url().endsWith("/api/v1/auth/login") && response.request().method() === "POST");
@@ -92,7 +93,7 @@ test.describe("@standard real service booking and execution", () => {
     await page.getByLabel("Опис проблеми", { exact: true }).fill("Synthetic stale service problem"); await page.getByRole("checkbox", { name: /Підтверджую, що замовляю/ }).check();
     const conflict = page.waitForResponse((r) => r.url().endsWith("/orders/standard") && r.request().method() === "POST"); await page.getByRole("button", { name: "Підтвердити замовлення" }).click(); expect((await conflict).status()).toBe(409);
     await expect(page.getByRole("button", { name: "Підтвердити замовлення" })).toBeDisabled(); await expect(page.getByText(/Послуга недоступна/)).toBeVisible(); expect(await database.order.count({ where: { serviceId: svc.id } })).toBe(0);
-    await page.reload(); await expect(page).toHaveURL(/\/login\?returnTo=/); await login(page, client, true);
+    await page.reload(); await expect(page).toHaveURL(new RegExp(`/orders/new/standard/${svc.id}$`));
     await expect(page.getByText(/Послуга недоступна/)).toBeVisible(); await expect(page.getByRole("form", { name: "STANDARD-замовлення" })).toHaveCount(0);
   });
 });

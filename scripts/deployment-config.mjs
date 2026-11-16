@@ -18,12 +18,13 @@ function secureTransport(env) {
 }
 export function validateFrontendDeployment(env) {
   secureTransport(env);
-  publicHttps(env.VITE_API_URL, "VITE_API_URL", true);
+  if (env.VITE_API_URL !== "/api/v1") fail("VITE_API_URL must be /api/v1 for single-origin deployment.");
   if (Object.keys(env).some((key) => key.startsWith("VITE_") && key !== "VITE_API_URL"))
     fail("Only the public VITE_API_URL is allowed in frontend deployment bindings.");
 }
 export function validateApiDeployment(env) {
-  secureTransport(env);
+  validateFrontendDeployment(env);
+  if (env.SERVE_FRONTEND !== "1") fail("Single-origin deployment requires SERVE_FRONTEND=1.");
   if (env.NODE_ENV !== "production" || env.HOST !== "0.0.0.0" || env.TRUST_PROXY_HOPS !== "1")
     fail("API deployment requires NODE_ENV=production, HOST=0.0.0.0 and TRUST_PROXY_HOPS=1.");
   if (!env.PORT || !/^\d+$/.test(env.PORT) || Number(env.PORT) < 1 || Number(env.PORT) > 65535)
@@ -32,7 +33,7 @@ export function validateApiDeployment(env) {
     fail("JWT_SECRET must be a private generated value of at least 32 bytes.");
   if (!env.CORS_ORIGINS) fail("Set the actual frontend CORS_ORIGINS explicitly.");
   const ttl = Number(env.JWT_TTL_SECONDS ?? 900);
-  if (!Number.isInteger(ttl) || ttl < 60 || ttl > 86400) fail("JWT_TTL_SECONDS must be between 60 and 86400.");
+  if (ttl !== 900) fail("Production JWT_TTL_SECONDS must be 900.");
   for (const origin of env.CORS_ORIGINS.split(",")) publicHttps(origin.trim(), "CORS_ORIGINS");
   let url;
   try { url = new URL(env.DATABASE_URL); } catch { fail("DATABASE_URL must be a private PostgreSQL binding."); }

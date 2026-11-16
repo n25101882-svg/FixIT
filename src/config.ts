@@ -53,11 +53,13 @@ export function loadConfig() {
   const proxy = process.env.TRUST_PROXY_HOPS ?? "0";
   if (proxy !== "0" && proxy !== "1")
     throw new Error("TRUST_PROXY_HOPS must be 0 (direct) or 1 (one trusted ingress).");
+  if (process.env.SERVE_FRONTEND && !["0", "1"].includes(process.env.SERVE_FRONTEND)) throw new Error("SERVE_FRONTEND must be 0 or 1.");
   return {
     databaseUrl: requireDatabaseUrl(),
     host: process.env.HOST ?? "127.0.0.1",
     port,
     trustProxyHops: proxy === "1" ? 1 as const : 0 as const,
+    serveFrontend: process.env.SERVE_FRONTEND === "1",
     ...loadAuthConfig(),
   };
 }
@@ -77,6 +79,8 @@ export function loadAuthConfig() {
   ) {
     throw new Error("JWT_TTL_SECONDS must be an integer between 60 and 86400.");
   }
+  if (process.env.NODE_ENV === "production" && tokenTtlSeconds !== 900)
+    throw new Error("Production access JWT TTL must be 900 seconds.");
   const corsOrigins = (
     process.env.CORS_ORIGINS ?? "http://127.0.0.1:5173,http://localhost:5173"
   )

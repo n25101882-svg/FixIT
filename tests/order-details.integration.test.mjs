@@ -18,7 +18,7 @@ let client, otherClient, master, otherMaster, admin, noProfile, service;
 const custom = {}, standard = {};
 async function account(name, role = "CLIENT") {
   const password = randomBytes(24).toString("hex");
-  const result = await request(app).post("/api/v1/auth/register").send({ email: name + suffix, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
+  const result = await request(app).post("/api/v1/auth/register").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send({ email: name + suffix, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
     ...(role === "MASTER" ? { city, category: "PLUMBING", profileDescription: "Synthetic profile", serviceTitle: "Synthetic STANDARD details service", serviceDescription: "Synthetic description", priceEstimate: "425.50" } : {}) }).expect(201);
   const user = result.body.user;
   return { ...user, token: issueToken(user.id, options), profile: await database.masterProfile.findUnique({ where: { userId: user.id } }) };

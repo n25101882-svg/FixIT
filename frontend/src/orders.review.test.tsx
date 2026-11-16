@@ -18,7 +18,7 @@ function Session({ children }: { children: ReactNode }) {
   return ready ? children : null;
 }
 function show() {
-  render(<MemoryRouter initialEntries={["/orders"]}><AuthProvider><Session><App /></Session></AuthProvider></MemoryRouter>);
+  render(<MemoryRouter initialEntries={["/orders"]}><AuthProvider recoverSession={false}><Session><App /></Session></AuthProvider></MemoryRouter>);
 }
 async function confirm() {
   await userEvent.click(await screen.findByRole("button", { name: "Скасувати заявку" }));

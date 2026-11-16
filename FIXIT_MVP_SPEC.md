@@ -1,6 +1,8 @@
 # FixIT — Hybrid MVP 1.0
 
-Практичні №6, №7, №9, №10 та US-06/US-07 розвивають наявну PostgreSQL 18 / Prisma 7.10.1 базу з п’ятьма сутностями. Це основа MVP, а не реалізація всього backlog. Initial `20261109200000_init_database_schema` і вже застосована Hybrid `20261114130000_hybrid_mvp` незмінні. Review-виправлення — наступна `20261114150000_review_snapshot_alignment`, без reset/db push. PR #3 вже merged у develop (`f7d7684`); Auth/React у PR #2 інтегровані з цією моделлю без нових змін схеми.
+Практичні №6, №7, №9, №10 та US-06/US-07 розвивають наявну PostgreSQL 18 / Prisma 7.10.1 базу з п’ятьма бізнес-сутностями. Це основа MVP, а не реалізація всього backlog. Initial `20261109200000_init_database_schema`, Hybrid `20261114130000_hybrid_mvp` і review `20261114150000_review_snapshot_alignment` незмінні. FIX-17 після PR #11 додає лише технічну `auth_sessions` четвертою міграцією `20261116090000_add_auth_sessions`, без reset/db push.
+
+Поточна авторизація: memory-only access JWT + rotating HttpOnly refresh-cookie/PostgreSQL, відновлення після F5 та server Logout; [модель загроз і фактичні тести](docs/FIX_17_REFRESH_SESSIONS.md). Згадки про невиправлений FIX-17 та три міграції в історичних розділах US нижче описують відповідний попередній етап, а не поточну реалізацію. Бізнес-логіка й історичні snapshots незмінні.
 
 ## Межі й ролі
 
@@ -23,6 +25,7 @@
 | Service / services | id, masterProfileId FK, title, category, nullable description і priceEstimate, isActive. UNIQUE(id,masterProfileId) для складеного FK. |
 | Order / orders | id, clientId FK, type, nullable serviceId/masterProfileId, title, city, category, description, nullable priceAtOrder/budget, status, createdAt, updatedAt, statusHistory JSONB. CHECK уточнює форму залежно від type/status. |
 | OrderResponse / order_responses | id, orderId FK, masterProfileId FK, message, nullable proposedPrice, createdAt. UNIQUE(orderId,masterProfileId). Це пропозиція, не рейтинг/Review. |
+| AuthSession / auth_sessions (технічна) | userId FK, UNIQUE tokenHash SHA-256, previousTokenHash/generation/rotatedAt, createdAt/lastUsedAt/expiresAt, revokedAt/revokedReason. Випадковий verifier не зберігається plaintext. Не є шостою бізнес-сутністю. |
 
 Enums: user_role = ADMIN/CLIENT/MASTER (ADMIN legacy); order_type = STANDARD/CUSTOM; order_status = OPEN/PENDING/ACCEPTED/IN_PROGRESS/COMPLETED/CANCELLED/DECLINED; service_category = TECH_REPAIR/PLUMBING/ELECTRICAL/OTHER. Prisma enum зберігає назву Category.
 
@@ -92,7 +95,7 @@ CLIENT створює лише User; MASTER-поля для CLIENT заборо�
 
 Login повертає короткоживучий HS256 JWT (issuer fixit-api, audience fixit-web, subject User.id, exp) і безпечний DTO. Secret тільки з environment; middleware перевіряє підпис, algorithm/issuer/audience/subject/exp. /users/me читає поточного User з БД; відсутній/недійсний/прострочений token або видалений account → 401. CORS — точні frontend origins, без wildcard/cookies; auth rate limit і межа JSON збережені.
 
-React показує MASTER-поля тільки після вибору ролі MASTER, не посилає їх для CLIENT, необов’язкову ціну передає рядком. Є підтвердження пароля, серверні field errors, /login, /dashboard із реальним users/me, protected routing і logout. Token лише в пам’яті, refresh вимагає повторного входу; localStorage/sessionStorage не використовуються.
+React показує MASTER-поля тільки після вибору ролі MASTER, не посилає їх для CLIENT, необов’язкову ціну передає рядком. Є підтвердження пароля, серверні field errors, /login, /dashboard із реальним users/me, protected routing і logout. Access JWT лише в пам’яті; FIX-17 відновлює його через захищену refresh-cookie, без localStorage/sessionStorage/IndexedDB. Публічна реєстрація зберігає контракт і тепер вимагає Origin/CSRF header, як інші auth POST.
 
 Критерії приймання FIX-1: MASTER success створює рівно три пов’язані записи; реальна DB-помилка третьої Service → rollback усіх трьох, без 201/token; duplicate/race email → один account без orphan; invalid MASTER fields → 400 до запису; CLIENT без профілю; ADMIN відхилений; login/me/JWT/CORS/rate-limit і frontend flow збережені. Фактичні результати endpoint, Hybrid і browser тестів — у [звіті №7](docs/PRACTICAL_7.md). Усі 82 Hybrid-тести та три SQL-міграції з develop збережені; Auth/frontend та test:migrations scripts поєднані. PR #2 вже merged у develop (e046255); наступні зміни також потребують окремого review/QA без автоматичного merge.
 

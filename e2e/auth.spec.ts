@@ -114,7 +114,7 @@ test("registration displays a duplicate email error", async ({
   const email = "duplicate" + suffix;
   const created = await request.post(
     "http://127.0.0.1:4100/api/v1/auth/register",
-    { data: { email, name: "Тестовий користувач", password, passwordConfirmation: password } },
+    { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, name: "Тестовий користувач", password, passwordConfirmation: password } },
   );
   expect(created.status()).toBe(201);
   await page.goto("/register");

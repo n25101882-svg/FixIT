@@ -28,7 +28,7 @@ const app = createApp(() => checkDatabase(database), options);
 const email = (name) => name + suffix;
 const register = (name, extra = {}) =>
   request(app)
-    .post("/api/v1/auth/register")
+    .post("/api/v1/auth/register").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1")
     .send({
       email: email(name),
       password,
@@ -44,7 +44,7 @@ beforeAll(async () => {
   client = (await register("client").expect(201)).body.user;
   token = (
     await request(app)
-      .post("/api/v1/auth/login")
+      .post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1")
       .send({ email: client.email, password })
       .expect(200)
   ).body.accessToken;
@@ -96,7 +96,7 @@ describe("registration and credentials", () => {
   });
   test("logs in and returns a signed expiring JWT and a safe user DTO", async () => {
     const { body } = await request(app)
-      .post("/api/v1/auth/login")
+      .post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1")
       .send({ email: `  ${client.email.toUpperCase()} `, password })
       .expect(200);
     const payload = jwt.verify(body.accessToken, secret, {
@@ -125,11 +125,11 @@ describe("registration and credentials", () => {
   });
   test("wrong passwords and unknown accounts return the same 401", async () => {
     const wrong = await request(app)
-      .post("/api/v1/auth/login")
+      .post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1")
       .send({ email: client.email, password: "Wrong synthetic password" })
       .expect(401);
     const unknown = await request(app)
-      .post("/api/v1/auth/login")
+      .post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1")
       .send({ email: email("unknown"), password })
       .expect(401);
     expect(wrong.body).toEqual(unknown.body);
@@ -262,7 +262,7 @@ describe("HTTP and environment boundaries", () => {
       preflight.headers["access-control-allow-credentials"],
     ).toBeUndefined();
     await request(app)
-      .post("/api/v1/auth/register")
+      .post("/api/v1/auth/register").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1")
       .set("Origin", "https://untrusted.example")
       .send({ email: email("evil"), password, name: "Synthetic" })
       .expect(403);
@@ -275,22 +275,22 @@ describe("HTTP and environment boundaries", () => {
       ...options,
       rateLimit: { limit: 1, windowMs: 60000 },
     });
-    await request(limited).post("/api/v1/auth/login").send({}).expect(400);
+    await request(limited).post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send({}).expect(400);
     expect(
-      (await request(limited).post("/api/v1/auth/login").send({}).expect(429))
+      (await request(limited).post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send({}).expect(429))
         .body.error.code,
     ).toBe("RATE_LIMITED");
   });
   test("malformed/oversized JSON does not expose request data or stack traces", async () => {
     const bad = await request(app)
-      .post("/api/v1/auth/login")
+      .post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1")
       .set("Content-Type", "application/json")
       .send('{"password":"sensitive-test-input",')
       .expect(400);
     expect(bad.body.error.code).toBe("INVALID_JSON");
     expect(JSON.stringify(bad.body)).not.toContain("sensitive-test-input");
     await request(app)
-      .post("/api/v1/auth/login")
+      .post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1")
       .send({ password: "x".repeat(20000) })
       .expect(413);
   });

@@ -12,10 +12,10 @@ type Account = { id: string; email: string; token: string };
 let client: Account, outsider: Account, master: Account, second: Account, otherCity: Account;
 async function account(request: APIRequestContext, name: string, role = "CLIENT", profileCity = city): Promise<Account> {
   const email = name + suffix;
-  const created = await request.post(`${backend}/auth/register`, { data: { email, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
+  const created = await request.post(`${backend}/auth/register`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
     ...(role === "MASTER" ? { city: profileCity, category: "PLUMBING", profileDescription: "Synthetic profile", serviceTitle: "Synthetic service", serviceDescription: "Synthetic service description" } : {}) } });
   expect(created.status()).toBe(201);
-  const loggedIn = await request.post(`${backend}/auth/login`, { data: { email, password } }); expect(loggedIn.status()).toBe(200);
+  const loggedIn = await request.post(`${backend}/auth/login`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password } }); expect(loggedIn.status()).toBe(200);
   return { id: (await created.json()).user.id, email, token: (await loggedIn.json()).accessToken };
 }
 async function login(page: Page, user: Account) {

@@ -12,13 +12,14 @@ let client: Account, master: Account, otherMaster: Account, serviceId: string;
 const headers = (actor: Account) => ({ Authorization: `Bearer ${actor.token}` });
 async function account(request: APIRequestContext, name: string, role: "CLIENT" | "MASTER"): Promise<Account> {
   const email = name + suffix;
-  const response = await request.post(`${backend}/auth/register`, { data: { email, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
+  const response = await request.post(`${backend}/auth/register`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
     ...(role === "MASTER" ? { city, category: "PLUMBING", profileDescription: "Synthetic profile", serviceTitle: "Synthetic details service", serviceDescription: "Synthetic description", priceEstimate: "425.50" } : {}) } });
   expect(response.status()).toBe(201);
-  const login = await request.post(`${backend}/auth/login`, { data: { email, password } }); expect(login.status()).toBe(200);
+  const login = await request.post(`${backend}/auth/login`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: { email, password } }); expect(login.status()).toBe(200);
   return { id: (await response.json()).user.id, email, token: (await login.json()).accessToken };
 }
 async function login(page: Page, actor: Account, target?: string) {
+  await page.context().request.post(`${backend}/auth/logout`, { headers: { Origin: "http://127.0.0.1:5174", "X-FixIT-CSRF": "1" }, data: {} });
   await page.goto(target ?? "/login");
   await page.getByLabel("Email", { exact: true }).fill(actor.email); await page.getByLabel("Пароль", { exact: true }).fill(password);
   const result = page.waitForResponse((response) => response.url().endsWith("/api/v1/auth/login") && response.request().method() === "POST");
@@ -48,7 +49,7 @@ test.describe("@details US-09 private order details and real timeline", () => {
   });
   test.afterAll(async () => { await database.$disconnect(); }); // Retain committed synthetic histories in *_test.
 
-  test("CUSTOM React creation/offering/selection/completion → both private details → foreign MASTER denied → re-login", async ({ page, browser, request }) => {
+  test("CUSTOM React creation/offering/selection/completion → both private details → foreign MASTER denied → F5 session recovery", async ({ page, browser, request }) => {
     await login(page, client); await page.getByRole("link", { name: "Мої заявки", exact: true }).click();
     const title = `Details CUSTOM ${randomUUID().slice(0, 8)}`;
     await page.getByLabel("Назва проблеми", { exact: true }).fill(title); await page.getByLabel("Опис проблеми", { exact: true }).fill("Synthetic real browser details problem");
@@ -72,8 +73,7 @@ test.describe("@details US-09 private order details and real timeline", () => {
       await clientCard.getByRole("link", { name: "Переглянути деталі" }).click(); await timeline(page, order.id, ["Відкрита", "Прийнята", "У роботі", "Завершена"]);
       expect((await request.get(`${backend}/master/orders/${order.id}`, { headers: headers(otherMaster) })).status()).toBe(404);
       await login(foreignPage, otherMaster, `/master/orders/${order.id}`); await expect(foreignPage.getByRole("alert")).toHaveText("Заявку не знайдено або вона недоступна."); await expect(foreignPage.getByText(title, { exact: true })).toHaveCount(0);
-      await page.reload(); await expect(page).toHaveURL(/\/login\?returnTo=/);
-      await page.getByLabel("Email", { exact: true }).fill(client.email); await page.getByLabel("Пароль", { exact: true }).fill(password); await page.getByRole("button", { name: "Увійти", exact: true }).click();
+      await page.reload(); // FIX-17: cookie recovery preserves this protected URL without Login.
       await expect(page).toHaveURL(`/orders/${order.id}`); await timeline(page, order.id, ["Відкрита", "Прийнята", "У роботі", "Завершена"]);
       await page.getByRole("button", { name: "Оновити деталі" }).click(); await timeline(page, order.id, ["Відкрита", "Прийнята", "У роботі", "Завершена"]);
       expect((await database.order.findUniqueOrThrow({ where: { id: order.id } })).statusHistory).toEqual(row.statusHistory);

@@ -14,7 +14,7 @@ const suffix = `@${randomUUID()}.standard-api.fixit.test`; const accountIds = []
 let client, otherClient, master, otherMaster;
 async function account(name, role = "CLIENT") {
   const password = randomBytes(24).toString("hex");
-  const result = await request(app).post("/api/v1/auth/register").send({ email: name + suffix, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
+  const result = await request(app).post("/api/v1/auth/register").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").send({ email: name + suffix, name: `Synthetic ${name}`, password, passwordConfirmation: password, role,
     ...(role === "MASTER" ? { city, category: "TECH_REPAIR", profileDescription: "Synthetic profile", serviceTitle: "Synthetic initial service", serviceDescription: "Synthetic initial description" } : {}) }).expect(201);
   const user = result.body.user; accountIds.push(user.id);
   return { ...user, token: issueToken(user.id, options), profile: await database.masterProfile.findUnique({ where: { userId: user.id } }) };

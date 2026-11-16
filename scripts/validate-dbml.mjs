@@ -8,13 +8,13 @@ const source = readFileSync("docs/er-diagram.dbml", "utf8");
 const database = Parser.parse(source, "dbmlv2");
 const tables = database.schemas.flatMap((schema) => schema.tables);
 if (
-  tables.length !== 5 ||
+  tables.length !== 6 ||
   tables
     .map((table) => table.name)
     .sort()
-    .join(",") !== "master_profiles,order_responses,orders,services,users"
+    .join(",") !== "auth_sessions,master_profiles,order_responses,orders,services,users"
 ) {
-  throw new Error("DBML must contain the five Hybrid MVP tables.");
+  throw new Error("DBML must contain five business tables plus auth_sessions.");
 }
 // A one-to-one DBML Ref puts the FK on its second endpoint. Verify the
 // exported direction, rather than accepting a diagram that merely parses.
@@ -48,5 +48,6 @@ assert.ok(
   ),
 );
 console.log(
-  "DBML valid: 5 tables; 7 FK, including STANDARD service/master composite ownership.",
+  "DBML valid: 5 business tables + auth_sessions; 8 FK, including STANDARD composite ownership.",
 );
+assert.ok(sql.includes('FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE ON UPDATE CASCADE'));

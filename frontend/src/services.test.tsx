@@ -16,7 +16,7 @@ function Session({ children }: { children: ReactNode }) {
   useEffect(() => { login("synthetic-services-token"); setReady(true); }, [login]); return ready ? children : null;
 }
 function show(path = "/master/services", authenticated = true) {
-  render(<MemoryRouter initialEntries={[path]}><AuthProvider>{authenticated ? <Session><App /></Session> : <App />}</AuthProvider></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[path]}><AuthProvider recoverSession={false}>{authenticated ? <Session><App /></Session> : <App />}</AuthProvider></MemoryRouter>);
 }
 function management(services: unknown[] = [service]) {
   const mock = vi.fn().mockResolvedValueOnce(json({ profile })).mockResolvedValueOnce(json({ services })); vi.stubGlobal("fetch", mock); return mock;

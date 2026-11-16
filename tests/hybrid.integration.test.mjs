@@ -54,13 +54,14 @@ const rejects = (action, code) =>
   expect(Promise.resolve().then(action)).rejects.toMatchObject({ code });
 
 describe("Hybrid persistence invariants", () => {
-  test("all three ordered migrations are applied", async () => {
+  test("all four ordered migrations are applied", async () => {
     const rows =
       await database.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name`;
     expect(rows.map((r) => r.migration_name)).toEqual([
       "20261109200000_init_database_schema",
       "20261114130000_hybrid_mvp",
       "20261114150000_review_snapshot_alignment",
+      "20261116090000_add_auth_sessions",
     ]);
   });
   test("seed has STANDARD and unassigned OPEN CUSTOM with unique proposals", async () => {

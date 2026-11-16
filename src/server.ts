@@ -2,6 +2,8 @@ import type { Server } from "node:http";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { checkDatabase, createDatabaseClient } from "./database/client.js";
+import { resolve } from "node:path";
+import { access } from "node:fs/promises";
 
 async function main() {
   const config = loadConfig();
@@ -9,12 +11,14 @@ async function main() {
   let server: Server | undefined;
 
   try {
+    const frontendDir = config.serveFrontend ? resolve("frontend/dist") : undefined;
+    if (frontendDir) await access(resolve(frontendDir, "index.html"));
     await database.$connect();
     await checkDatabase(database);
     const app = createApp(() => checkDatabase(database), {
       database,
       ...config,
-    }, { trustProxyHops: config.trustProxyHops });
+    }, { trustProxyHops: config.trustProxyHops, frontendDir });
     await new Promise<void>((resolve, reject) => {
       server = app.listen(config.port, config.host, (error?: Error) => {
         if (error) reject(error);

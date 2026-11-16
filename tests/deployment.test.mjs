@@ -13,9 +13,9 @@ import { validateBlueprint } from "../scripts/check-render-blueprint.mjs";
 // contacts Render; the rate-limit test fails validation before database access.
 const secret = "synthetic-deployment-unit-fixture-" + "a".repeat(32);
 const localDatabase = "postgresql://synthetic:unused@127.0.0.1:55432/fixit_release_test";
-const apiEnv = () => ({ NODE_ENV: "production", HOST: "0.0.0.0", PORT: "10000", TRUST_PROXY_HOPS: "1", JWT_SECRET: secret,
+const apiEnv = () => ({ NODE_ENV: "production", HOST: "0.0.0.0", PORT: "10000", TRUST_PROXY_HOPS: "1", SERVE_FRONTEND: "1", VITE_API_URL: "/api/v1", JWT_SECRET: secret,
   DATABASE_URL: "postgresql://synthetic:unused@dpg-synthetic-a/fixit", CORS_ORIGINS: "https://fixit-web.onrender.com", JWT_TTL_SECONDS: "900" });
-const webEnv = () => ({ VITE_API_URL: "https://fixit-api.onrender.com/api/v1" });
+const webEnv = () => ({ VITE_API_URL: "/api/v1" });
 function cli(script, args, env, withLocalEnv = false) {
   const directory = mkdtempSync(join(tmpdir(), "fixit-deployment-guard-"));
   try {
@@ -42,14 +42,17 @@ describe("bounded proxy and platform HTTP configuration", () => {
   test("platform HOST/PORT and explicit one-hop trust are used", () => {
     expect(configured({ ...common, HOST: "0.0.0.0", PORT: "10000", TRUST_PROXY_HOPS: "1" })).toMatchObject({ host: "0.0.0.0", port: 10000, trustProxyHops: 1 });
   });
+  test("production access lifetime cannot be extended beyond the 15-minute decision", () => {
+    expect(() => configured({ ...common, NODE_ENV: "production", JWT_TTL_SECONDS: "1800" })).toThrow("900 seconds");
+  });
   test.each(["true", "2", "-1", "1.5", "", "loopback"])("unbounded/invalid proxy setting %# fails", (value) => {
     expect(() => configured({ ...common, TRUST_PROXY_HOPS: value })).toThrow("TRUST_PROXY_HOPS");
   });
   test("one trusted ingress keeps independent auth rate limits by forwarded client", async () => {
-    const app = createApp(async () => {}, { database: {}, jwtSecret: secret, tokenTtlSeconds: 900, corsOrigins: [], rateLimit: { limit: 1, windowMs: 60000 } }, { trustProxyHops: 1 });
-    await request(app).post("/api/v1/auth/login").set("X-Forwarded-For", "192.0.2.10").send({}).expect(400);
-    await request(app).post("/api/v1/auth/login").set("X-Forwarded-For", "192.0.2.11").send({}).expect(400);
-    await request(app).post("/api/v1/auth/login").set("X-Forwarded-For", "192.0.2.10").send({}).expect(429);
+    const app = createApp(async () => {}, { database: {}, jwtSecret: secret, tokenTtlSeconds: 900, corsOrigins: ["http://127.0.0.1:5173"], rateLimit: { limit: 1, windowMs: 60000 } }, { trustProxyHops: 1 });
+    await request(app).post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").set("X-Forwarded-For", "192.0.2.10").send({}).expect(400);
+    await request(app).post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").set("X-Forwarded-For", "192.0.2.11").send({}).expect(400);
+    await request(app).post("/api/v1/auth/login").set("Origin", "http://127.0.0.1:5173").set("X-FixIT-CSRF", "1").set("X-Forwarded-For", "192.0.2.10").send({}).expect(429);
     expect(app.get("trust proxy")).toBe(1);
   });
 });
@@ -112,7 +115,7 @@ describe("deployment preflight rejects unsafe configuration without logging valu
 
 describe("Render blueprint local safety invariants", () => {
   const blueprint = () => JSON.parse(readFileSync("render.yaml", "utf8"));
-  test("free plans, explicit bindings, migration startup, SPA fallback and no autodeploy", () => { expect(() => validateBlueprint(blueprint())).not.toThrow(); });
+  test("free single-origin service, explicit bindings, migration startup and no autodeploy", () => { expect(() => validateBlueprint(blueprint())).not.toThrow(); });
   test('PostgreSQL version is the Render-required string "18", never numeric 18', () => {
     const data = blueprint();
     expect(data.databases[0].postgresMajorVersion).toBe("18");
@@ -121,16 +124,16 @@ describe("Render blueprint local safety invariants", () => {
     expect(() => validateBlueprint(data)).toThrow("postgresMajorVersion to be a string");
   });
   test.each(["paid-api", "paid-db", "paid-static", "auto-deploy", "pre-deploy", "public-db", "leaked-secret", "frontend-secret", "missing-spa", "wrong-pg", "duplicate-binding"])("unsafe Blueprint change %s fails locally", (kind) => {
-    const data = blueprint(), api = data.services[0], web = data.services[1];
+    const data = blueprint(), api = data.services[0];
     if (kind === "paid-api") api.plan = "starter";
     if (kind === "paid-db") data.databases[0].plan = "basic-256mb";
-    if (kind === "paid-static") web.plan = "starter";
+    if (kind === "paid-static") data.services.push({ runtime: "static", plan: "starter" });
     if (kind === "auto-deploy") api.autoDeployTrigger = "commit";
     if (kind === "pre-deploy") api.preDeployCommand = "npm run db:migrate";
     if (kind === "public-db") data.databases[0].ipAllowList = [{ source: "0.0.0.0/0" }];
     if (kind === "leaked-secret") api.envVars.find((item) => item.key === "JWT_SECRET").value = secret;
-    if (kind === "frontend-secret") web.envVars.push({ key: "VITE_JWT_SECRET", value: secret });
-    if (kind === "missing-spa") web.routes = [];
+    if (kind === "frontend-secret") api.envVars.push({ key: "VITE_JWT_SECRET", value: secret });
+    if (kind === "missing-spa") api.envVars.find((item) => item.key === "SERVE_FRONTEND").value = "0";
     if (kind === "wrong-pg") data.databases[0].postgresMajorVersion = "17";
     if (kind === "duplicate-binding") api.envVars.push(api.envVars[0]);
     expect(() => validateBlueprint(data)).toThrow();
